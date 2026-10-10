@@ -1,6 +1,7 @@
 import Conversation from "../models/conversation.model.js";
 import Message from "../models/message.model.js";
 import User from "../models/user.model.js";
+import AuditLog from "../models/auditLog.model.js";
 
 /**
  * Get or create 1-to-1 conversation with another user
@@ -271,9 +272,30 @@ export const editMessage = async (req, res) => {
     const { text } = req.body;
     const userId = req.user._id;
 
-    const message = await Message.findOne({ _id: messageId, sender: userId });
+    if (!text || typeof text !== "string" || !text.trim()) {
+      return res.status(400).json({ success: false, message: "Message content cannot be empty" });
+    }
+
+    if (text.trim().length > 5000) {
+      return res.status(400).json({ success: false, message: "Message cannot exceed 5000 characters" });
+    }
+
+    const message = await Message.findById(messageId);
     if (!message) {
-      return res.status(404).json({ success: false, message: "Message not found or unauthorized" });
+      return res.status(404).json({ success: false, message: "Message not found" });
+    }
+
+    if (message.sender.toString() !== userId.toString()) {
+      return res.status(403).json({ success: false, message: "Unauthorized: You can only edit your own messages" });
+    }
+
+    // Verify conversation membership
+    const conversation = await Conversation.findOne({
+      _id: message.conversation,
+      participants: userId,
+    });
+    if (!conversation) {
+      return res.status(403).json({ success: false, message: "You are not an active member of this conversation" });
     }
 
     if (message.isDeletedForEveryone) {
@@ -284,14 +306,25 @@ export const editMessage = async (req, res) => {
     message.isEdited = true;
     await message.save();
 
+    // If message was conversation lastMessage, update preview
+    if (conversation.lastMessage && conversation.lastMessage.toString() === message._id.toString()) {
+      conversation.lastMessageText = message.text;
+      await conversation.save();
+    }
+
+    const populated = await Message.findById(message._id)
+      .populate("replyTo", "text senderName messageType")
+      .populate("sender", "fullName username profileImage")
+      .populate("reactions.user", "fullName username profileImage");
+
     const io = req.app.get("io");
     if (io) {
-      io.to(message.conversation.toString()).emit("messageUpdated", message);
+      io.to(message.conversation.toString()).emit("messageUpdated", populated);
     }
 
     return res.status(200).json({
       success: true,
-      message,
+      message: populated,
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -312,19 +345,50 @@ export const deleteMessage = async (req, res) => {
       return res.status(404).json({ success: false, message: "Message not found" });
     }
 
+    // Verify conversation membership
+    const conversation = await Conversation.findOne({
+      _id: message.conversation,
+      participants: userId,
+    });
+    const isAdmin = req.user.role === "admin" || req.user.role === "super_admin";
+
+    if (!conversation && !isAdmin) {
+      return res.status(403).json({ success: false, message: "Unauthorized to access this conversation" });
+    }
+
     if (forEveryone) {
-      if (message.sender.toString() !== userId.toString()) {
-        return res.status(403).json({ success: false, message: "Can only delete own messages for everyone" });
+      const isOwner = message.sender.toString() === userId.toString();
+      if (!isOwner && !isAdmin) {
+        return res.status(403).json({ success: false, message: "Only message sender or admin can delete for everyone" });
       }
+
       message.isDeletedForEveryone = true;
       message.text = "This message was deleted";
       message.attachments = [];
       await message.save();
 
+      // If conversation last message
+      if (conversation && conversation.lastMessage?.toString() === message._id.toString()) {
+        conversation.lastMessageText = "This message was deleted";
+        await conversation.save();
+      }
+
+      if (isAdmin && !isOwner) {
+        await AuditLog.create({
+          admin: req.user._id,
+          action: "MODERATE_DELETE_MESSAGE",
+          targetType: "Message",
+          targetId: messageId,
+          details: { conversationId: message.conversation.toString() },
+          ipAddress: req.ip || "",
+        });
+      }
+
       const io = req.app.get("io");
       if (io) {
         io.to(message.conversation.toString()).emit("messageDeleted", {
           messageId,
+          conversationId: message.conversation,
           forEveryone: true,
         });
       }
@@ -337,6 +401,7 @@ export const deleteMessage = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Message deleted successfully",
+      forEveryone: Boolean(forEveryone),
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -404,6 +469,15 @@ export const togglePinMessage = async (req, res) => {
 
     message.pinned = !message.pinned;
     await message.save();
+
+    const io = req.app.get("io");
+    if (io) {
+      io.to(message.conversation.toString()).emit("messagePinned", {
+        messageId,
+        pinned: message.pinned,
+        conversationId: message.conversation,
+      });
+    }
 
     return res.status(200).json({
       success: true,

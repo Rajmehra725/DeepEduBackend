@@ -133,9 +133,10 @@ const userSchema = new mongoose.Schema(
     deviceTokens: { type: [String], default: [] },
     role: {
       type: String,
-      enum: ["user", "admin", "moderator"],
+      enum: ["user", "moderator", "admin", "super_admin"],
       default: "user",
     },
+    isPrimarySuperAdmin: { type: Boolean, default: false },
     isVerified: { type: Boolean, default: true },
     isActive: { type: Boolean, default: true },
     isSuspended: { type: Boolean, default: false },

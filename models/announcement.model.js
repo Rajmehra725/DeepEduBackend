@@ -17,6 +17,33 @@ const announcementSchema = new mongoose.Schema(
       enum: ["normal", "important", "critical"],
       default: "normal",
     },
+    status: {
+      type: String,
+      enum: ["draft", "scheduled", "sent", "cancelled"],
+      default: "sent",
+    },
+    targetAudience: {
+      type: String,
+      enum: ["all", "active", "admins"],
+      default: "all",
+    },
+    scheduledAt: {
+      type: Date,
+      default: null,
+    },
+    sentAt: {
+      type: Date,
+      default: null,
+    },
+    recipientsCount: {
+      type: Number,
+      default: 0,
+    },
+    deliveryStatus: {
+      type: String,
+      enum: ["pending", "in_progress", "completed", "failed", "cancelled"],
+      default: "completed",
+    },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

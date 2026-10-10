@@ -335,10 +335,135 @@ async function runVerification() {
   if (!suspendRes.data.success) throw new Error("Admin suspension failed");
   console.log("✅ Step 23: Admin User Moderation (Suspension) Verified");
 
-  // 24. Clean up test server
+  // 24. Test Message Editing (User A edits their own message)
+  const editMsgRes = await axios.put(
+    `${BASE_URL}/chat/messages/${messageId}`,
+    { text: "Hello Priya! (Edited by Raj)" },
+    { headers: { Authorization: `Bearer ${tokenA}` } }
+  );
+  if (!editMsgRes.data.success || !editMsgRes.data.message.isEdited) {
+    throw new Error("Message editing failed");
+  }
+  console.log("✅ Step 24: Chat Message Editing & isEdited Persistence Verified");
+
+  // 25. Test Edit Authorization Rejection (User B tries to edit User A's message)
+  try {
+    await axios.put(
+      `${BASE_URL}/chat/messages/${messageId}`,
+      { text: "Hacked by User B!" },
+      { headers: { Authorization: `Bearer ${tokenB}` } }
+    );
+    throw new Error("User B should not be permitted to edit User A's message");
+  } catch (err) {
+    if (err.response?.status === 403) {
+      console.log("✅ Step 25: Message Edit Authorization & Ownership Security Enforced (403)");
+    } else {
+      throw err;
+    }
+  }
+
+  // 26. Test Super Admin Role Assignment & Protection
+  await User.findByIdAndUpdate(userAId, { role: "super_admin", isPrimarySuperAdmin: true });
+  const roleUpdateRes = await axios.put(
+    `${BASE_URL}/admin/users/${userBId}/role`,
+    { role: "moderator" },
+    { headers: { Authorization: `Bearer ${tokenA}` } }
+  );
+  if (!roleUpdateRes.data.success || roleUpdateRes.data.user.role !== "moderator") {
+    throw new Error("Role update failed");
+  }
+  console.log("✅ Step 26: Super Admin Role Assignment Verified");
+
+  // 27. Test Admin Group Management CRUD
+  const adminGroupRes = await axios.post(
+    `${BASE_URL}/admin/groups`,
+    {
+      name: "Official Raaz Hub",
+      description: "Platform announcements circle",
+      category: "general",
+    },
+    { headers: { Authorization: `Bearer ${tokenA}` } }
+  );
+  if (!adminGroupRes.data.success) throw new Error("Admin group creation failed");
+  const adminGroupId = adminGroupRes.data.group._id;
+
+  const updateGroupRes = await axios.put(
+    `${BASE_URL}/admin/groups/${adminGroupId}`,
+    { name: "Official Raaz Hub (Updated)" },
+    { headers: { Authorization: `Bearer ${tokenA}` } }
+  );
+  if (!updateGroupRes.data.success) throw new Error("Admin group update failed");
+  console.log("✅ Step 27: Admin Group Management CRUD Verified");
+
+  // 28. Test Notification Campaign Lifecycle (Draft -> Send)
+  const draftNotifRes = await axios.post(
+    `${BASE_URL}/admin/notifications`,
+    {
+      title: "Holiday Greetings",
+      message: "Happy Holidays from RaazChat!",
+      isDraft: true,
+    },
+    { headers: { Authorization: `Bearer ${tokenA}` } }
+  );
+  if (!draftNotifRes.data.success || draftNotifRes.data.notification.status !== "draft") {
+    throw new Error("Notification draft failed");
+  }
+  const notifId = draftNotifRes.data.notification._id;
+
+  const sendNotifRes = await axios.post(
+    `${BASE_URL}/admin/notifications/${notifId}/send`,
+    {},
+    { headers: { Authorization: `Bearer ${tokenA}` } }
+  );
+  if (!sendNotifRes.data.success || sendNotifRes.data.notification.status !== "sent") {
+    throw new Error("Notification broadcast failed");
+  }
+  console.log("✅ Step 28: Notification Campaign Lifecycle (Draft & Broadcast) Verified");
+
+  // 29. Test Application Settings CRUD
+  const settingsRes = await axios.get(`${BASE_URL}/admin/settings`, {
+    headers: { Authorization: `Bearer ${tokenA}` },
+  });
+  if (!settingsRes.data.success || !settingsRes.data.settings) {
+    throw new Error("Settings fetch failed");
+  }
+
+  const updateSettingRes = await axios.put(
+    `${BASE_URL}/admin/settings/MAINTENANCE_MODE`,
+    { value: false, description: "System operational" },
+    { headers: { Authorization: `Bearer ${tokenA}` } }
+  );
+  if (!updateSettingRes.data.success) throw new Error("Setting update failed");
+  console.log("✅ Step 29: Permitted Application Settings CRUD Verified");
+
+  // 30. Test Message Deletion (Delete for Everyone)
+  const deleteForEveryoneRes = await axios.delete(
+    `${BASE_URL}/chat/messages/${messageId}`,
+    {
+      data: { forEveryone: true },
+      headers: { Authorization: `Bearer ${tokenA}` },
+    }
+  );
+  if (!deleteForEveryoneRes.data.success) throw new Error("Delete for everyone failed");
+  const checkDeletedMsg = await Message.findById(messageId);
+  if (!checkDeletedMsg.isDeletedForEveryone || checkDeletedMsg.text !== "This message was deleted") {
+    throw new Error("Message redaction on delete for everyone failed");
+  }
+  console.log("✅ Step 30: Delete for Everyone & Content Redaction Verified");
+
+  // 31. Test Audit Logs Persistence
+  const auditLogsRes = await axios.get(`${BASE_URL}/admin/audit-logs`, {
+    headers: { Authorization: `Bearer ${tokenA}` },
+  });
+  if (!auditLogsRes.data.success || auditLogsRes.data.logs.length === 0) {
+    throw new Error("Audit logs empty");
+  }
+  console.log(`✅ Step 31: Audit Trail Verification (${auditLogsRes.data.logs.length} audit entries verified)`);
+
+  // 32. Clean up test server
   server.close();
   console.log("=================================================");
-  console.log("🎉 ALL 24 VERIFICATION TESTS PASSED SUCCESSFULLY! 🎉");
+  console.log("🎉 ALL 32 VERIFICATION TESTS PASSED SUCCESSFULLY! 🎉");
   console.log("=================================================");
   process.exit(0);
 }

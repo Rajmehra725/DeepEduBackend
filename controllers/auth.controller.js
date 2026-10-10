@@ -71,9 +71,10 @@ export const register = async (req, res) => {
       });
     }
 
-    // Check if first user to grant admin, otherwise user
+    // Check if first user to grant super_admin, otherwise user
     const totalUsers = await User.countDocuments();
-    const role = totalUsers === 0 ? "admin" : "user";
+    const role = totalUsers === 0 ? "super_admin" : "user";
+    const isPrimarySuperAdmin = totalUsers === 0;
 
     const user = new User({
       fullName: fullName.trim(),
@@ -82,6 +83,7 @@ export const register = async (req, res) => {
       password,
       profileImage: profileImage || "",
       role,
+      isPrimarySuperAdmin,
       isOnline: true,
       lastLogin: new Date(),
     });

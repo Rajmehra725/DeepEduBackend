@@ -50,10 +50,35 @@ export const protect = async (req, res, next) => {
 };
 
 export const adminOnly = async (req, res, next) => {
-  if (!req.user || req.user.role !== "admin") {
+  if (!req.user || (req.user.role !== "admin" && req.user.role !== "super_admin")) {
     return res.status(403).json({
       success: false,
       message: "Admin privilege required",
+    });
+  }
+  next();
+};
+
+export const superAdminOnly = async (req, res, next) => {
+  if (!req.user || req.user.role !== "super_admin") {
+    return res.status(403).json({
+      success: false,
+      message: "Super Admin authorization required for this action",
+    });
+  }
+  next();
+};
+
+export const moderatorOrAdmin = async (req, res, next) => {
+  if (
+    !req.user ||
+    (req.user.role !== "moderator" &&
+      req.user.role !== "admin" &&
+      req.user.role !== "super_admin")
+  ) {
+    return res.status(403).json({
+      success: false,
+      message: "Moderator or Admin privilege required",
     });
   }
   next();
