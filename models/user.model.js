@@ -54,7 +54,20 @@ const moodSchema = new mongoose.Schema(
   {
     mood: {
       type: String,
-      enum: ["", "happy", "sad", "tired", "need_company", "focused", "need_space"],
+      enum: [
+        "",
+        "happy",
+        "loved",
+        "chill",
+        "sad",
+        "excited",
+        "grateful",
+        "thoughtful",
+        "tired",
+        "focused",
+        "need_company",
+        "need_space",
+      ],
       default: "",
     },
     note: { type: String, default: "" },
@@ -82,8 +95,8 @@ const userSchema = new mongoose.Schema(
     },
     phone: {
       type: String,
-      required: true,
-      unique: true,
+      required: false,
+      sparse: true,
       trim: true,
       index: true,
     },
@@ -96,7 +109,26 @@ const userSchema = new mongoose.Schema(
       type: String,
       trim: true,
       lowercase: true,
+      sparse: true,
+      index: true,
+    },
+    displayName: {
+      type: String,
       default: "",
+      trim: true,
+    },
+    interests: {
+      type: [String],
+      default: [],
+    },
+    isProfilePrivate: {
+      type: Boolean,
+      default: false,
+    },
+    realYouMode: {
+      type: String,
+      enum: ["public", "friends", "just_me"],
+      default: "public",
     },
     password: {
       type: String,
@@ -106,9 +138,13 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    coverImage: {
+      type: String,
+      default: "",
+    },
     bio: {
       type: String,
-      default: "Hey there! I am using RaazChat.",
+      default: "Hey there! I am using SmileyX.",
       maxlength: 250,
     },
     gender: {

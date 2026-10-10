@@ -27,6 +27,9 @@ import adminRoutes from "./routes/admin.routes.js";
 import reportRoutes from "./routes/report.routes.js";
 import uploadRoutes from "./routes/upload.routes.js";
 import cardRoutes from "./routes/cardRoutes.js"; // Legacy preservation
+import postRoutes from "./routes/post.routes.js";
+import moodRoutes from "./routes/mood.routes.js";
+import notificationRoutes from "./routes/notification.routes.js";
 
 const app = express();
 
@@ -75,6 +78,9 @@ app.use("/api/chat", chatRoutes);
 app.use("/api/groups", groupRoutes);
 app.use("/api/secret-room", secretRoomRoutes);
 app.use("/api/moments", momentRoutes);
+app.use("/api/posts", postRoutes);
+app.use("/api/mood", moodRoutes);
+app.use("/api/notifications", notificationRoutes);
 app.use("/api/capsules", timeCapsuleRoutes);
 app.use("/api/chat-play", chatPlayRoutes);
 app.use("/api/admin", adminRoutes);
@@ -86,13 +92,15 @@ app.use("/api/cards", cardRoutes); // Legacy
 app.get("/", (req, res) => {
   res.json({
     success: true,
-    platform: "RaazChat Pro API",
-    tagline: "Your Space. Your People. Your Rules.",
-    version: "1.0.0",
+    platform: "SmileyX API",
+    tagline: "Your Moments. Your Feelings. Your World.",
+    concept: "Share a Moment. Express a Feeling. Keep a Memory. Stay Connected.",
+    version: "2.0.0",
     theme: {
-      primary: "#FF7A00",
-      secondary: "#F59E0B",
-      background: "#FFF9F2",
+      primary: "#2563EB",
+      secondary: "#38BDF8",
+      accent: "#06B6D4",
+      background: "#F8FAFF",
     },
     status: "Active & Real-Time Ready 🚀",
   });

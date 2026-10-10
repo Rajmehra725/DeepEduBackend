@@ -13,17 +13,67 @@ const sanitizeUser = (user) => {
 };
 
 /**
- * Register a new RaazChat user
+ * Check if a username is available
+ */
+export const checkUsernameAvailability = async (req, res) => {
+  try {
+    const raw = (req.query.username || "").toString();
+    const username = raw.replace(/^@+/, "").trim().toLowerCase();
+
+    if (!username || username.length < 3) {
+      return res.status(400).json({
+        success: false,
+        available: false,
+        message: "Username must be at least 3 characters",
+      });
+    }
+
+    if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
+      return res.status(400).json({
+        success: false,
+        available: false,
+        message: "Username can only contain letters, numbers, and underscores",
+      });
+    }
+
+    const existingUser = await User.findOne({ username });
+    return res.status(200).json({
+      success: true,
+      available: !existingUser,
+      message: existingUser ? `Username @${username} is already taken` : `Username @${username} is available`,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Register a new SmileyX user (Email, Username, Password - No OTP)
  */
 export const register = async (req, res) => {
   try {
-    let { fullName, username, phone, password, confirmPassword, profileImage } =
-      req.body;
+    let {
+      fullName,
+      username,
+      email,
+      phone,
+      password,
+      confirmPassword,
+      profileImage,
+      termsAccepted,
+    } = req.body;
 
-    if (!fullName || !username || !phone || !password) {
+    if (!fullName || !username || !password) {
       return res.status(400).json({
         success: false,
-        message: "Full Name, Username, Phone number, and Password are required",
+        message: "Full Name, Username, and Password are required",
+      });
+    }
+
+    if (!email && !phone) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide an email address or mobile number",
       });
     }
 
@@ -43,7 +93,6 @@ export const register = async (req, res) => {
 
     // Clean username (remove leading @ and whitespace, lowercase)
     username = username.replace(/^@+/, "").trim().toLowerCase();
-    phone = phone.trim();
 
     if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
       return res.status(400).json({
@@ -62,13 +111,36 @@ export const register = async (req, res) => {
       });
     }
 
-    // Check if phone number is already registered
-    const existingPhone = await User.findOne({ phone });
-    if (existingPhone) {
-      return res.status(400).json({
-        success: false,
-        message: "Mobile number is already registered. Please login.",
-      });
+    // Validate email if provided
+    let cleanEmail = "";
+    if (email) {
+      cleanEmail = email.trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+        return res.status(400).json({
+          success: false,
+          message: "Please enter a valid email address",
+        });
+      }
+      const existingEmail = await User.findOne({ email: cleanEmail });
+      if (existingEmail) {
+        return res.status(400).json({
+          success: false,
+          message: "Email address is already registered. Please login.",
+        });
+      }
+    }
+
+    // Check if phone number is already registered (if provided)
+    let cleanPhone = "";
+    if (phone) {
+      cleanPhone = phone.trim();
+      const existingPhone = await User.findOne({ phone: cleanPhone });
+      if (existingPhone) {
+        return res.status(400).json({
+          success: false,
+          message: "Mobile number is already registered. Please login.",
+        });
+      }
     }
 
     // Check if first user to grant super_admin, otherwise user
@@ -79,7 +151,9 @@ export const register = async (req, res) => {
     const user = new User({
       fullName: fullName.trim(),
       username,
-      phone,
+      email: cleanEmail,
+      phone: cleanPhone || undefined,
+      mobileNumber: cleanPhone || undefined,
       password,
       profileImage: profileImage || "",
       role,
@@ -95,7 +169,7 @@ export const register = async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      message: "Welcome to RaazChat! Account created successfully.",
+      message: "Welcome to SmileyX! Account created successfully.",
       token,
       refreshToken,
       user: sanitizeUser(user),
@@ -110,27 +184,33 @@ export const register = async (req, res) => {
 };
 
 /**
- * Login using Username + Password OR Mobile Number + Password
+ * Login using Email, Username, OR Mobile Number + Password
  */
 export const login = async (req, res) => {
   try {
-    const { identifier, username, phone, password } = req.body;
+    const { identifier, username, email, phone, password } = req.body;
 
-    const loginId = (identifier || username || phone || "").trim();
+    const rawId = (identifier || username || email || phone || "").trim();
 
-    if (!loginId || !password) {
+    if (!rawId || !password) {
       return res.status(400).json({
         success: false,
-        message: "Please enter your username/mobile and password",
+        message: "Please enter your email/username and password",
       });
     }
 
     // Clean identifier
-    const cleanUsername = loginId.replace(/^@+/, "").toLowerCase();
+    const cleanUsername = rawId.replace(/^@+/, "").toLowerCase();
+    const cleanEmail = rawId.toLowerCase();
 
-    // Query by username OR phone
+    // Query by username OR email OR phone
     const user = await User.findOne({
-      $or: [{ username: cleanUsername }, { phone: loginId }],
+      $or: [
+        { username: cleanUsername },
+        { email: cleanEmail },
+        { phone: rawId },
+        { mobileNumber: rawId },
+      ],
     }).select("+password");
 
     if (!user) {
@@ -297,12 +377,13 @@ export const changePassword = async (req, res) => {
  */
 export const recoverAccount = async (req, res) => {
   try {
-    const { phone, username, newPassword } = req.body;
+    const { phone, username, email, identifier, newPassword } = req.body;
+    const lookupId = (identifier || email || username || phone || "").trim();
 
-    if ((!phone && !username) || !newPassword) {
+    if (!lookupId || !newPassword) {
       return res.status(400).json({
         success: false,
-        message: "Registered phone/username and new password are required",
+        message: "Email/username and new password are required",
       });
     }
 
@@ -313,8 +394,17 @@ export const recoverAccount = async (req, res) => {
       });
     }
 
-    const query = phone ? { phone } : { username: username.toLowerCase().replace(/^@+/, "") };
-    const user = await User.findOne(query).select("+password");
+    const cleanUsername = lookupId.toLowerCase().replace(/^@+/, "");
+    const cleanEmail = lookupId.toLowerCase();
+
+    const user = await User.findOne({
+      $or: [
+        { username: cleanUsername },
+        { email: cleanEmail },
+        { phone: lookupId },
+        { mobileNumber: lookupId },
+      ],
+    }).select("+password");
 
     if (!user) {
       return res.status(404).json({

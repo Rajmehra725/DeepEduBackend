@@ -10,12 +10,14 @@ import {
   logout,
   sendOTP,
   verifyOTP,
+  checkUsernameAvailability,
 } from "../controllers/auth.controller.js";
 import { protect } from "../middleware/auth.middleware.js";
 
 const router = express.Router();
 
 // Public routes
+router.get("/check-username", checkUsernameAvailability);
 router.post("/register", register);
 router.post("/login", login);
 router.post("/refresh-token", refreshToken);
