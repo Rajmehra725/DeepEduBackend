@@ -9,6 +9,7 @@ import {
   toggleSavePost,
   editPost,
   deletePost,
+  getUserPosts,
 } from "../controllers/post.controller.js";
 import { protect } from "../middleware/auth.middleware.js";
 
@@ -18,6 +19,7 @@ router.use(protect);
 
 router.post("/create", createPost);
 router.get("/feed", getPostsFeed);
+router.get("/user/:userId", getUserPosts);
 router.post("/:postId/react", reactToPost);
 router.post("/:postId/poll/:optionId/vote", votePoll);
 router.post("/:postId/comments", addComment);

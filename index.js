@@ -194,6 +194,29 @@ io.on("connection", (socket) => {
     }
   });
 
+  // Message delivery receipts (Double Tick)
+  socket.on("markDelivered", async ({ conversationId, messageIds, userId }) => {
+    try {
+      if (Array.isArray(messageIds) && messageIds.length > 0 && userId) {
+        await Message.updateMany(
+          { _id: { $in: messageIds }, status: "sent", sender: { $ne: userId } },
+          {
+            $addToSet: { deliveredTo: userId },
+            $set: { status: "delivered" },
+          }
+        );
+
+        socket.to(conversationId.toString()).emit("messageDeliveredUpdate", {
+          conversationId,
+          messageIds,
+          userId,
+        });
+      }
+    } catch (err) {
+      console.error("[Socket] markDelivered error:", err);
+    }
+  });
+
   // Disconnection handler
   socket.on("disconnect", async () => {
     console.log("❌ [Socket] Disconnected:", socket.id);
@@ -235,6 +258,6 @@ connectDB().then(() => {
   startCapsuleScheduler();
 
   server.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 RaazChat Pro Backend Running on http://localhost:${PORT}`);
+    console.log(`🚀 SmileyX Backend Running on http://localhost:${PORT}`);
   });
 });

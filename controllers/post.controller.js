@@ -2,6 +2,7 @@ import Post from "../models/post.model.js";
 import Comment from "../models/comment.model.js";
 import FriendRequest from "../models/friendRequest.model.js";
 import Notification from "../models/notification.model.js";
+import User from "../models/user.model.js";
 
 /**
  * Create a new Post (Permanent Moment)
@@ -392,6 +393,63 @@ export const deletePost = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Moment deleted",
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Get Posts of a specific user (for My Space and public/private profile view)
+ */
+export const getUserPosts = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const currentUserId = req.user._id;
+    const { page = 1, limit = 20 } = req.query;
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    let query = { user: userId };
+    if (userId.toString() !== currentUserId.toString()) {
+      const targetUser = await User.findById(userId);
+      if (targetUser?.isProfilePrivate) {
+        const isFriend = await FriendRequest.exists({
+          status: "accepted",
+          $or: [
+            { sender: currentUserId, recipient: userId },
+            { sender: userId, recipient: currentUserId },
+          ],
+        });
+        if (!isFriend) {
+          return res.status(403).json({
+            success: false,
+            message: "This account is private. Connect to see their moments.",
+            isPrivate: true,
+          });
+        }
+      }
+      query.audience = { $in: ["everyone", "friends"] };
+    }
+
+    const posts = await Post.find(query)
+      .populate("user", "fullName username profileImage")
+      .populate("mentions", "fullName username profileImage")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await Post.countDocuments(query);
+
+    return res.status(200).json({
+      success: true,
+      posts,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        hasMore: skip + posts.length < total,
+      },
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });

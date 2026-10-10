@@ -520,3 +520,208 @@ export const toggleStarMessage = async (req, res) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+
+/**
+ * Get conversation details, other participant, and shared media
+ */
+export const getConversationDetails = async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const userId = req.user._id;
+
+    const conversation = await Conversation.findOne({
+      _id: conversationId,
+      participants: userId,
+    })
+      .populate("participants", "fullName username displayName profileImage bio isOnline lastSeen privacySettings")
+      .populate("admins", "fullName username displayName profileImage");
+
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        message: "Conversation not found or unauthorized",
+      });
+    }
+
+    let otherUser = null;
+    let title = conversation.name;
+    let avatar = conversation.avatar;
+
+    if (conversation.type === "direct") {
+      const other = conversation.participants.find(
+        (p) => p._id.toString() !== userId.toString()
+      );
+      if (other) {
+        title = other.displayName || other.fullName;
+        avatar = other.profileImage;
+        const canShowOnline =
+          !other.privacySettings?.ghostMode &&
+          other.privacySettings?.showOnline !== false;
+        const canShowLastSeen =
+          !other.privacySettings?.ghostMode &&
+          other.privacySettings?.showLastSeen !== false;
+        otherUser = {
+          _id: other._id,
+          fullName: other.fullName,
+          displayName: other.displayName || other.fullName,
+          username: other.username,
+          profileImage: other.profileImage,
+          bio: other.bio,
+          isOnline: canShowOnline ? Boolean(other.isOnline) : false,
+          lastSeen: canShowLastSeen ? other.lastSeen : null,
+        };
+      }
+    }
+
+    // Fetch shared media in this conversation
+    const sharedMedia = await Message.find({
+      conversation: conversationId,
+      deletedFor: { $ne: userId },
+      isDeletedForEveryone: false,
+      "attachments.0": { $exists: true },
+    })
+      .select("attachments createdAt senderName")
+      .sort({ createdAt: -1 })
+      .limit(30);
+
+    return res.status(200).json({
+      success: true,
+      conversation: {
+        _id: conversation._id,
+        type: conversation.type,
+        name: title,
+        avatar,
+        description: conversation.description,
+        category: conversation.category,
+        otherUser,
+        participants: conversation.participants,
+        admins: conversation.admins,
+        isPinned: conversation.pinnedBy?.includes(userId),
+        isMuted: conversation.mutedBy?.includes(userId),
+        isArchived: conversation.archivedBy?.includes(userId),
+        sharedMedia,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Clear conversation history for current user (Delete for Me on all)
+ */
+export const clearChat = async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const userId = req.user._id;
+
+    await Message.updateMany(
+      { conversation: conversationId },
+      { $addToSet: { deletedFor: userId } }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Chat cleared successfully",
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Forward message to another conversation
+ */
+export const forwardMessage = async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const { targetConversationId } = req.body;
+    const userId = req.user._id;
+
+    if (!targetConversationId) {
+      return res.status(400).json({ success: false, message: "targetConversationId is required" });
+    }
+
+    const original = await Message.findById(messageId);
+    if (!original || original.isDeletedForEveryone) {
+      return res.status(404).json({ success: false, message: "Message not found or deleted" });
+    }
+
+    const targetConv = await Conversation.findOne({
+      _id: targetConversationId,
+      participants: userId,
+    });
+    if (!targetConv) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not a member of the target conversation",
+      });
+    }
+
+    const forwarded = new Message({
+      conversation: targetConversationId,
+      sender: userId,
+      senderName: req.user.fullName,
+      senderAvatar: req.user.profileImage,
+      text: original.text,
+      messageType: original.messageType,
+      attachments: original.attachments,
+      status: "sent",
+    });
+
+    await forwarded.save();
+
+    targetConv.lastMessage = forwarded._id;
+    targetConv.lastMessageText = original.text || `[Forwarded ${original.messageType}]`;
+    targetConv.lastMessageAt = forwarded.createdAt;
+    await targetConv.save();
+
+    const populated = await Message.findById(forwarded._id).populate("sender", "fullName username profileImage");
+
+    const io = req.app.get("io");
+    if (io) {
+      io.to(targetConversationId.toString()).emit("newMessage", populated);
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: populated,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Acknowledge message delivery
+ */
+export const markDelivered = async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const { messageIds } = req.body;
+    const userId = req.user._id;
+
+    if (Array.isArray(messageIds) && messageIds.length > 0) {
+      await Message.updateMany(
+        { _id: { $in: messageIds }, status: "sent", sender: { $ne: userId } },
+        {
+          $addToSet: { deliveredTo: userId },
+          $set: { status: "delivered" },
+        }
+      );
+
+      const io = req.app.get("io");
+      if (io) {
+        io.to(conversationId.toString()).emit("messageDeliveredUpdate", {
+          conversationId,
+          messageIds,
+          userId,
+        });
+      }
+    }
+
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
