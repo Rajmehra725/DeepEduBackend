@@ -10,7 +10,7 @@ const connectDB = async () => {
 
     const uri =
       process.env.MONGODB_URI ||
-      "mongodb+srv://infosystem:Rajd2003@cluster0.u0le37x.mongodb.net/test?retryWrites=true&w=majority";
+      "mongodb+srv://rajdaheriya725_db_user:yMLrj0XQuO1ffe7O@cluster0.uimztsg.mongodb.net/?appName=Cluster0";
 
     const conn = await mongoose.connect(uri, {
       serverSelectionTimeoutMS: 10000,
