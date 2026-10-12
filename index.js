@@ -1,5 +1,5 @@
-import dotenv from "dotenv";
-dotenv.config();
+
+import "dotenv/config";
 
 import express from "express";
 import cors from "cors";
@@ -9,11 +9,25 @@ const app = express();
 
 // ================= MIDDLEWARE =================
 
+const allowedOrigins = process.env.FRONTEND_URL
+  ? process.env.FRONTEND_URL.split(",").map((url) => url.trim())
+  : [];
+
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL
-      ? process.env.FRONTEND_URL.split(",").map((url) => url.trim())
-      : true,
+    origin(origin, callback) {
+      // Allow requests without Origin (Postman, server-to-server).
+      // When FRONTEND_URL is unset, allow all origins for local development.
+      if (
+        !origin ||
+        allowedOrigins.length === 0 ||
+        allowedOrigins.includes(origin)
+      ) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("CORS origin not allowed"));
+    },
     credentials: true,
   })
 );
@@ -32,20 +46,22 @@ app.get("/", (req, res) => {
 });
 
 app.get("/health", (req, res) => {
-  res.status(200).json({
-    success: true,
+  const dbConnected = mongooseConnectionReady();
+
+  res.status(dbConnected ? 200 : 503).json({
+    success: dbConnected,
     server: "online",
-    database: "check server logs for connection status",
+    database: dbConnected ? "connected" : "disconnected",
   });
 });
 
-// ================= API ROUTES =================
-// Apne existing routes ke imports aur app.use() yahan rakhein.
-// Example:
-// import authRoutes from "./routes/authRoutes.js";
-// app.use("/api/auth", authRoutes);
+function mongooseConnectionReady() {
+  // readyState 1 means Mongoose is connected.
+  return Boolean(
+    globalThis.__deepEduMongooseConnected
+  );
+}
 
-// ================= 404 HANDLER =================
 
 app.use((req, res) => {
   res.status(404).json({
@@ -59,11 +75,19 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
   console.error("API Error:", err.message);
 
-  res.status(err.status || 500).json({
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  const statusCode = err.status || 500;
+
+  res.status(statusCode).json({
     success: false,
     message:
       process.env.NODE_ENV === "production"
-        ? "Internal server error"
+        ? statusCode === 500
+          ? "Internal server error"
+          : err.message
         : err.message,
   });
 });
@@ -74,14 +98,22 @@ const PORT = process.env.PORT || 5000;
 
 const startServer = async () => {
   try {
-    console.log("Connecting to MongoDB...");
-
     await connectDB();
 
-    app.listen(PORT, "0.0.0.0", () => {
+    // Mark DB as connected for the health endpoint.
+    globalThis.__deepEduMongooseConnected = true;
+
+    const server = app.listen(PORT, "0.0.0.0", () => {
       console.log(`DeepEdu Backend running on port ${PORT}`);
+      console.log(`Health check: http://localhost:${PORT}/health`);
+    });
+
+    server.on("error", (error) => {
+      console.error("HTTP server error:", error.message);
+      process.exitCode = 1;
     });
   } catch (error) {
+    globalThis.__deepEduMongooseConnected = false;
     console.error("Backend startup failed:", error.message);
     process.exit(1);
   }
