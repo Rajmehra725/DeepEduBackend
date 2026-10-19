@@ -2,6 +2,7 @@ import Student from "../models/Student.js";
 import User from "../models/User.js";
 import School from "../models/School.js";
 import Subscription from "../models/Subscription.js";
+import { generatePermanentId } from "../utils/idGenerator.js";
 
 export const getStudents = async (req, res) => {
   try {
@@ -35,6 +36,7 @@ export const getStudents = async (req, res) => {
         { firstName: searchRegex },
         { lastName: searchRegex },
         { admissionNumber: searchRegex },
+        { permanentId: searchRegex },
         { parentName: searchRegex },
         { parentPhone: searchRegex },
       ];
@@ -191,9 +193,13 @@ export const createStudent = async (req, res) => {
       }
     }
 
+    // Generate concurrency-safe permanent Student ID (e.g. STU-2026-0001)
+    const permanentId = await generatePermanentId(schoolId, "student", "STU");
+
     const newStudent = await Student.create({
       schoolId,
       userId: user._id,
+      permanentId,
       admissionNumber: admissionNumber.trim().toUpperCase(),
       rollNumber: rollNumber ? rollNumber.trim() : "",
       firstName: firstName.trim(),

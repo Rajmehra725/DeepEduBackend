@@ -19,6 +19,11 @@ import complaintRoutes from "./routes/complaint.routes.js";
 import noticeRoutes from "./routes/notice.routes.js";
 import notificationRoutes from "./routes/notification.routes.js";
 import reportRoutes from "./routes/report.routes.js";
+import teacherAttendanceRoutes from "./routes/teacherAttendance.routes.js";
+import timetableRoutes from "./routes/timetable.routes.js";
+import marksheetRoutes from "./routes/marksheet.routes.js";
+import certificateRoutes from "./routes/certificate.routes.js";
+import galleryRoutes from "./routes/gallery.routes.js";
 
 const app = express();
 
@@ -105,6 +110,11 @@ app.use("/api/complaints", complaintRoutes);
 app.use("/api/notices", noticeRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/reports", reportRoutes);
+app.use("/api/teacher-attendance", teacherAttendanceRoutes);
+app.use("/api/timetable", timetableRoutes);
+app.use("/api/marksheets", marksheetRoutes);
+app.use("/api/certificates", certificateRoutes);
+app.use("/api/gallery", galleryRoutes);
 
 // ================= 404 NOT FOUND HANDLER =================
 

@@ -20,6 +20,12 @@ const studentSchema = new mongoose.Schema(
       trim: true,
       uppercase: true,
     },
+    permanentId: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      index: true,
+    },
     rollNumber: {
       type: String,
       trim: true,
@@ -105,6 +111,7 @@ const studentSchema = new mongoose.Schema(
 );
 
 studentSchema.index({ schoolId: 1, admissionNumber: 1 }, { unique: true });
+studentSchema.index({ schoolId: 1, permanentId: 1 }, { unique: true, sparse: true });
 studentSchema.index({ schoolId: 1, classId: 1, sectionId: 1 });
 studentSchema.index({ schoolId: 1, status: 1 });
 

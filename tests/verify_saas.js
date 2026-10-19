@@ -325,6 +325,283 @@ async function runTests() {
     assert(false, `Student CSV export failed: ${err.message}`);
   }
 
+  // 14. FACULTY SELF-ATTENDANCE
+  console.log("\n--- 14. FACULTY ATTENDANCE & PRINCIPAL REVIEW ---");
+  try {
+    const res = await axios.post(
+      `${BASE_URL}/teacher-attendance/check-in`,
+      { status: "Present", remarks: "Automated check-in test" },
+      { headers: { Authorization: `Bearer ${teacherToken}` } }
+    );
+    assert(
+      (res.status === 200 || res.status === 201) && res.data.data.status === "Present",
+      "Teacher self-attendance check-in recorded"
+    );
+  } catch (err) {
+    assert(false, `Teacher check-in failed: ${err.message}`);
+  }
+
+  try {
+    const res = await axios.get(`${BASE_URL}/teacher-attendance/school`, {
+      headers: { Authorization: `Bearer ${principalToken}` },
+    });
+    assert(
+      res.status === 200 && Array.isArray(res.data.data.report),
+      "Principal retrieves daily faculty attendance roster"
+    );
+  } catch (err) {
+    assert(false, `Principal teacher attendance view failed: ${err.message}`);
+  }
+
+  // 15. TIMETABLE & CONFLICT VALIDATION
+  console.log("\n--- 15. TIMETABLE SCHEDULE & CONFLICT VALIDATION ---");
+  let testSlotId = "";
+  let teacherIdForTimetable = "";
+  try {
+    const teachersRes = await axios.get(`${BASE_URL}/teachers`, {
+      headers: { Authorization: `Bearer ${principalToken}` },
+    });
+    const teachersList = teachersRes.data.data.teachers || [];
+    teacherIdForTimetable = teachersList[0]._id;
+
+    // Add valid timetable slot
+    const slotRes = await axios.post(
+      `${BASE_URL}/timetable/slot`,
+      {
+        classId: testClassId,
+        sectionId: testSectionId,
+        subjectId: testSubjectId,
+        teacherId: teacherIdForTimetable,
+        dayOfWeek: "Monday",
+        periodNumber: 1,
+        startTime: "09:00",
+        endTime: "09:45",
+        roomNumber: "Room-101",
+      },
+      { headers: { Authorization: `Bearer ${principalToken}` } }
+    );
+    assert(
+      (slotRes.status === 200 || slotRes.status === 201) && slotRes.data.data._id,
+      "Timetable slot created successfully"
+    );
+    testSlotId = slotRes.data.data._id;
+
+    // Get other section for collision testing
+    const classesRes = await axios.get(`${BASE_URL}/academics/classes`, {
+      headers: { Authorization: `Bearer ${principalToken}` },
+    });
+    const firstClass = classesRes.data.data[0];
+    const otherSectionId =
+      firstClass.sections[1]?._id || classesRes.data.data[1]?.sections[0]?._id;
+
+    // Test Teacher Conflict (same teacher, same day, same period in another section)
+    try {
+      await axios.post(
+        `${BASE_URL}/timetable/slot`,
+        {
+          classId: testClassId,
+          sectionId: otherSectionId,
+          subjectId: testSubjectId,
+          teacherId: teacherIdForTimetable,
+          dayOfWeek: "Monday",
+          periodNumber: 1,
+          startTime: "09:00",
+          endTime: "09:45",
+          roomNumber: "Room-102",
+        },
+        { headers: { Authorization: `Bearer ${principalToken}` } }
+      );
+      assert(false, "Teacher conflict slot should be rejected");
+    } catch (conflictErr) {
+      assert(
+        conflictErr.response?.status === 409,
+        "Teacher schedule collision rejected with HTTP 409 Conflict"
+      );
+    }
+
+    // Test Room Conflict (different teacher, same room, same day, same period in another section)
+    try {
+      await axios.post(
+        `${BASE_URL}/timetable/slot`,
+        {
+          classId: testClassId,
+          sectionId: otherSectionId,
+          subjectId: testSubjectId,
+          teacherId: teachersList[1]?._id || teacherIdForTimetable,
+          dayOfWeek: "Monday",
+          periodNumber: 1,
+          startTime: "09:00",
+          endTime: "09:45",
+          roomNumber: "Room-101",
+        },
+        { headers: { Authorization: `Bearer ${principalToken}` } }
+      );
+      assert(false, "Room conflict slot should be rejected");
+    } catch (conflictErr) {
+      assert(
+        conflictErr.response?.status === 409,
+        "Room occupancy collision rejected with HTTP 409 Conflict"
+      );
+    }
+
+    // Clean up created slot
+    if (testSlotId) {
+      await axios.delete(`${BASE_URL}/timetable/slot/${testSlotId}`, {
+        headers: { Authorization: `Bearer ${principalToken}` },
+      });
+    }
+  } catch (err) {
+    assert(false, `Timetable workflow failed: ${err.message}`);
+  }
+
+  // 16. MARKSHEET & A4 PRINTABLE REPORT CARD
+  console.log("\n--- 16. MARKSHEET METRICS & A4 PRINTABLE ENGINE ---");
+  try {
+    const res = await axios.get(`${BASE_URL}/marksheets/${testStudentId}`, {
+      headers: { Authorization: `Bearer ${principalToken}` },
+    });
+    assert(
+      res.status === 200 &&
+        res.data.data.summary.totalMax > 0 &&
+        res.data.data.student.permanentId,
+      "Marksheet JSON computed with totals, percentages, and permanent student ID"
+    );
+  } catch (err) {
+    assert(false, `Marksheet data failed: ${err.message}`);
+  }
+
+  try {
+    const res = await axios.get(
+      `${BASE_URL}/marksheets/${testStudentId}/print?token=${principalToken}`
+    );
+    assert(
+      res.status === 200 &&
+        res.data.includes("Academic Progress Report") &&
+        res.data.includes("@page { size: A4 portrait;"),
+      "Printable A4 HTML marksheet generated with print CSS and grade breakdown"
+    );
+  } catch (err) {
+    assert(false, `Printable marksheet HTML failed: ${err.message}`);
+  }
+
+  // 17. CERTIFICATE ISSUANCE & PRINTING
+  console.log("\n--- 17. CERTIFICATES & BONAFIDE GENERATION ---");
+  let testCertId = "";
+  try {
+    const res = await axios.post(
+      `${BASE_URL}/certificates`,
+      {
+        studentId: testStudentId,
+        type: "Bonafide Certificate",
+        remarks: "Exemplary academic conduct and regular attendance",
+      },
+      { headers: { Authorization: `Bearer ${principalToken}` } }
+    );
+    assert(
+      res.status === 201 && res.data.data.certificateNumber.startsWith("CERT-"),
+      "Bonafide certificate issued with atomic sequence number"
+    );
+    testCertId = res.data.data._id;
+  } catch (err) {
+    assert(false, `Certificate issuance failed: ${err.message}`);
+  }
+
+  try {
+    const res = await axios.get(
+      `${BASE_URL}/certificates/${testCertId}/print?token=${principalToken}`
+    );
+    assert(
+      res.status === 200 &&
+        res.data.includes("Bonafide Certificate") &&
+        res.data.includes("cert-frame"),
+      "Printable A4 landscape certificate HTML rendered with institutional seals"
+    );
+  } catch (err) {
+    assert(false, `Certificate print HTML failed: ${err.message}`);
+  }
+
+  // 18. GALLERY ALBUMS & MEDIA
+  console.log("\n--- 18. GALLERY ALBUMS & MULTI-TENANT MEDIA ---");
+  let testAlbumId = "";
+  try {
+    const res = await axios.post(
+      `${BASE_URL}/gallery`,
+      {
+        title: "Annual Sports Meet 2026",
+        description: "Track and field events for high school division",
+        category: "Sports",
+        coverImage: "https://images.unsplash.com/photo-1461896836934-ffe607ba8211",
+      },
+      { headers: { Authorization: `Bearer ${principalToken}` } }
+    );
+    assert(
+      res.status === 201 && res.data.data.title === "Annual Sports Meet 2026",
+      "Gallery album created with cover image and category"
+    );
+    testAlbumId = res.data.data._id;
+  } catch (err) {
+    assert(false, `Gallery album creation failed: ${err.message}`);
+  }
+
+  try {
+    const res = await axios.post(
+      `${BASE_URL}/gallery/${testAlbumId}/media`,
+      {
+        items: [
+          {
+            url: "https://images.unsplash.com/photo-1517649763962-0c623266ddc0",
+            title: "Relay Race Finish",
+            caption: "Gold medal victory in 4x100m relay",
+            mediaType: "image",
+          },
+        ],
+      },
+      { headers: { Authorization: `Bearer ${principalToken}` } }
+    );
+    assert(
+      res.status === 200 && res.data.data.media.length > 0,
+      "Media item attached to gallery album"
+    );
+  } catch (err) {
+    assert(false, `Gallery media attachment failed: ${err.message}`);
+  }
+
+  try {
+    const res = await axios.get(`${BASE_URL}/gallery`, {
+      headers: { Authorization: `Bearer ${studentToken}` },
+    });
+    assert(
+      res.status === 200 && Array.isArray(res.data.data),
+      "Student retrieves published school gallery albums"
+    );
+  } catch (err) {
+    assert(false, `Gallery listing failed: ${err.message}`);
+  }
+
+  // 19. PERMANENT CONCURRENCY-SAFE ID VERIFICATION
+  console.log("\n--- 19. PERMANENT IDENTIFIER SYSTEM ---");
+  try {
+    const studentRes = await axios.get(`${BASE_URL}/students/${testStudentId}`, {
+      headers: { Authorization: `Bearer ${principalToken}` },
+    });
+    const sId = studentRes.data.data.permanentId;
+    assert(
+      Boolean(sId && sId.startsWith("STU-")),
+      `Student permanent ID exists and follows standardized convention: ${sId}`
+    );
+
+    const teachersRes = await axios.get(`${BASE_URL}/teachers`, {
+      headers: { Authorization: `Bearer ${principalToken}` },
+    });
+    const tId = teachersRes.data.data.teachers[0]?.permanentId;
+    assert(
+      Boolean(tId && tId.startsWith("TCH-")),
+      `Teacher permanent ID exists and follows standardized convention: ${tId}`
+    );
+  } catch (err) {
+    assert(false, `Permanent ID verification failed: ${err.message}`);
+  }
+
   console.log("\n=======================================================");
   console.log(`TEST SUMMARY: ${passedCount} PASSED, ${failedCount} FAILED`);
   console.log("=======================================================\n");

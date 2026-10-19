@@ -21,6 +21,7 @@ import FeePayment from "../models/FeePayment.js";
 import Complaint from "../models/Complaint.js";
 import Notice from "../models/Notice.js";
 import Notification from "../models/Notification.js";
+import { generatePermanentId } from "../utils/idGenerator.js";
 
 async function seed() {
   try {
@@ -220,10 +221,12 @@ async function seed() {
 
       let teacher = await Teacher.findOne({ schoolId: school._id, employeeId: t.empId });
       if (!teacher) {
+        const permanentId = await generatePermanentId(school._id, "teacher", "TCH");
         teacher = await Teacher.create({
           schoolId: school._id,
           userId: user._id,
           employeeId: t.empId,
+          permanentId,
           firstName: t.firstName,
           lastName: t.lastName,
           email: t.email,
@@ -233,6 +236,9 @@ async function seed() {
           specialization: t.specialization,
           status: "active",
         });
+      } else if (!teacher.permanentId) {
+        teacher.permanentId = await generatePermanentId(school._id, "teacher", "TCH");
+        await teacher.save();
       }
       teacherMap[t.empId] = teacher;
     }
@@ -302,10 +308,12 @@ async function seed() {
 
       let student = await Student.findOne({ schoolId: school._id, admissionNumber: st.adm });
       if (!student) {
+        const permanentId = await generatePermanentId(school._id, "student", "STU");
         student = await Student.create({
           schoolId: school._id,
           userId: studentUser._id,
           admissionNumber: st.adm,
+          permanentId,
           rollNumber: st.roll,
           firstName: st.first,
           lastName: st.last,
@@ -320,6 +328,9 @@ async function seed() {
           parentUserId: parentUser._id,
           status: "active",
         });
+      } else if (!student.permanentId) {
+        student.permanentId = await generatePermanentId(school._id, "student", "STU");
+        await student.save();
       }
       studentMap[st.adm] = student;
     }
@@ -453,18 +464,24 @@ async function seed() {
     );
 
     const aarav = studentMap["STU-1001"];
-    await FeePayment.create({
+    const existingPayment = await FeePayment.findOne({
       schoolId: school._id,
-      studentId: aarav._id,
       receiptNumber: "RCP-2026-0001",
-      amount: 15000,
-      paymentMethod: "UPI",
-      transactionRef: "UPI/20261019/998877",
-      feeCategory: "Quarterly Tuition Installment",
-      recordedBy: principal._id,
-      remarks: "Part payment received via PhonePe",
-      paymentDate: new Date(),
     });
+    if (!existingPayment) {
+      await FeePayment.create({
+        schoolId: school._id,
+        studentId: aarav._id,
+        receiptNumber: "RCP-2026-0001",
+        amount: 15000,
+        paymentMethod: "UPI",
+        transactionRef: "UPI/20261019/998877",
+        feeCategory: "Quarterly Tuition Installment",
+        recordedBy: principal._id,
+        remarks: "Part payment received via PhonePe",
+        paymentDate: new Date(),
+      });
+    }
     console.log("✅ Fee structures and receipt RCP-2026-0001 recorded");
 
     // 15. Complaint (Shikayat)

@@ -3,6 +3,7 @@ import User from "../models/User.js";
 import ClassSubjectTeacher from "../models/ClassSubjectTeacher.js";
 import Section from "../models/Section.js";
 import Student from "../models/Student.js";
+import { generatePermanentId } from "../utils/idGenerator.js";
 
 export const getTeachers = async (req, res) => {
   try {
@@ -20,6 +21,7 @@ export const getTeachers = async (req, res) => {
         { firstName: searchRegex },
         { lastName: searchRegex },
         { employeeId: searchRegex },
+        { permanentId: searchRegex },
         { email: searchRegex },
         { phone: searchRegex },
         { designation: searchRegex },
@@ -167,9 +169,12 @@ export const createTeacher = async (req, res) => {
       status: "active",
     });
 
+    const permanentId = await generatePermanentId(schoolId, "teacher", "TCH");
+
     const teacher = await Teacher.create({
       schoolId,
       userId: user._id,
+      permanentId,
       employeeId: employeeId.trim().toUpperCase(),
       firstName: firstName.trim(),
       lastName: lastName ? lastName.trim() : "",

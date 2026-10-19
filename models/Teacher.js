@@ -20,6 +20,12 @@ const teacherSchema = new mongoose.Schema(
       trim: true,
       uppercase: true,
     },
+    permanentId: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      index: true,
+    },
     firstName: {
       type: String,
       required: true,
@@ -73,6 +79,7 @@ const teacherSchema = new mongoose.Schema(
 );
 
 teacherSchema.index({ schoolId: 1, employeeId: 1 }, { unique: true });
+teacherSchema.index({ schoolId: 1, permanentId: 1 }, { unique: true, sparse: true });
 
 const Teacher = mongoose.model("Teacher", teacherSchema);
 export default Teacher;
