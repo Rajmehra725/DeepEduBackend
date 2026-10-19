@@ -1,13 +1,35 @@
-
 import "dotenv/config";
-
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import connectDB from "./config/db.js";
+
+// Routes
+import authRoutes from "./routes/auth.routes.js";
+import superadminRoutes from "./routes/superadmin.routes.js";
+import academicRoutes from "./routes/academic.routes.js";
+import studentRoutes from "./routes/student.routes.js";
+import teacherRoutes from "./routes/teacher.routes.js";
+import attendanceRoutes from "./routes/attendance.routes.js";
+import homeworkRoutes from "./routes/homework.routes.js";
+import examRoutes from "./routes/exam.routes.js";
+import feeRoutes from "./routes/fee.routes.js";
+import complaintRoutes from "./routes/complaint.routes.js";
+import noticeRoutes from "./routes/notice.routes.js";
+import notificationRoutes from "./routes/notification.routes.js";
+import reportRoutes from "./routes/report.routes.js";
 
 const app = express();
 
-// ================= MIDDLEWARE =================
+// ================= SECURITY & MIDDLEWARE =================
+
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+  })
+);
 
 const allowedOrigins = process.env.FRONTEND_URL
   ? process.env.FRONTEND_URL.split(",").map((url) => url.trim())
@@ -16,8 +38,6 @@ const allowedOrigins = process.env.FRONTEND_URL
 app.use(
   cors({
     origin(origin, callback) {
-      // Allow requests without Origin (Postman, server-to-server).
-      // When FRONTEND_URL is unset, allow all origins for local development.
       if (
         !origin ||
         allowedOrigins.length === 0 ||
@@ -25,15 +45,26 @@ app.use(
       ) {
         return callback(null, true);
       }
-
       return callback(new Error("CORS origin not allowed"));
     },
     credentials: true,
   })
 );
 
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.use(express.json({ limit: "15mb" }));
+app.use(express.urlencoded({ extended: true, limit: "15mb" }));
+
+// Rate limiter for authentication endpoints
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // 100 requests per 15 min
+  message: {
+    success: false,
+    message: "Too many login attempts, please try again after 15 minutes",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // ================= HEALTH CHECK =================
 
@@ -56,12 +87,26 @@ app.get("/health", (req, res) => {
 });
 
 function mongooseConnectionReady() {
-  // readyState 1 means Mongoose is connected.
-  return Boolean(
-    globalThis.__deepEduMongooseConnected
-  );
+  return Boolean(globalThis.__deepEduMongooseConnected);
 }
 
+// ================= API ROUTES =================
+
+app.use("/api/auth", authLimiter, authRoutes);
+app.use("/api/superadmin", superadminRoutes);
+app.use("/api/academics", academicRoutes);
+app.use("/api/students", studentRoutes);
+app.use("/api/teachers", teacherRoutes);
+app.use("/api/attendance", attendanceRoutes);
+app.use("/api/homework", homeworkRoutes);
+app.use("/api/exams", examRoutes);
+app.use("/api/fees", feeRoutes);
+app.use("/api/complaints", complaintRoutes);
+app.use("/api/notices", noticeRoutes);
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/reports", reportRoutes);
+
+// ================= 404 NOT FOUND HANDLER =================
 
 app.use((req, res) => {
   res.status(404).json({
@@ -73,7 +118,7 @@ app.use((req, res) => {
 // ================= ERROR HANDLER =================
 
 app.use((err, req, res, next) => {
-  console.error("API Error:", err.message);
+  console.error("API Error Stack:", err.stack || err.message);
 
   if (res.headersSent) {
     return next(err);
@@ -83,12 +128,8 @@ app.use((err, req, res, next) => {
 
   res.status(statusCode).json({
     success: false,
-    message:
-      process.env.NODE_ENV === "production"
-        ? statusCode === 500
-          ? "Internal server error"
-          : err.message
-        : err.message,
+    message: err.message,
+    stack: process.env.NODE_ENV === "production" ? undefined : err.stack,
   });
 });
 
@@ -99,8 +140,6 @@ const PORT = process.env.PORT || 5000;
 const startServer = async () => {
   try {
     await connectDB();
-
-    // Mark DB as connected for the health endpoint.
     globalThis.__deepEduMongooseConnected = true;
 
     const server = app.listen(PORT, "0.0.0.0", () => {
@@ -120,3 +159,4 @@ const startServer = async () => {
 };
 
 startServer();
+export default app;
