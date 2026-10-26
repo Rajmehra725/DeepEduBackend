@@ -4,6 +4,8 @@ import Subject from "../models/Subject.js";
 import AcademicSession from "../models/AcademicSession.js";
 import ClassSubjectTeacher from "../models/ClassSubjectTeacher.js";
 import Student from "../models/Student.js";
+import School from "../models/School.js";
+import AuditLog from "../models/AuditLog.js";
 
 export const getClasses = async (req, res) => {
   try {
@@ -331,5 +333,64 @@ export const getClassAssignments = async (req, res) => {
       message: "Failed to fetch class assignments",
       error: error.message,
     });
+  }
+};
+
+/**
+ * Principal: Get School Settings & Branding
+ */
+export const getSchoolSettings = async (req, res) => {
+  try {
+    const school = await School.findById(req.schoolId).populate("currentSessionId");
+    if (!school) {
+      return res.status(404).json({ success: false, message: "School not found" });
+    }
+    return res.status(200).json({ success: true, data: school });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Failed to get settings", error: error.message });
+  }
+};
+
+/**
+ * Principal: Update School Settings & Branding
+ */
+export const updateSchoolSettings = async (req, res) => {
+  try {
+    const { name, logo, phone, email, address, udiseCode, affiliationNumber, currentSessionId, allowSelfRegistration } = req.body;
+    const school = await School.findById(req.schoolId);
+
+    if (!school) {
+      return res.status(404).json({ success: false, message: "School not found" });
+    }
+
+    if (name) school.name = name.trim();
+    if (logo !== undefined) school.logo = logo;
+    if (phone !== undefined) school.phone = phone.trim();
+    if (email) school.email = email.trim().toLowerCase();
+    if (address !== undefined) school.address = address;
+    if (udiseCode !== undefined) school.udiseCode = udiseCode.trim();
+    if (affiliationNumber !== undefined) school.affiliationNumber = affiliationNumber.trim();
+    if (currentSessionId !== undefined) school.currentSessionId = currentSessionId || null;
+    if (allowSelfRegistration !== undefined) school.allowSelfRegistration = Boolean(allowSelfRegistration);
+
+    await school.save();
+
+    await AuditLog.create({
+      schoolId: school._id,
+      userId: req.user?._id,
+      action: "SCHOOL_BRANDING_UPDATED",
+      entity: "School",
+      entityId: school._id.toString(),
+      details: { name: school.name, logo: school.logo, udiseCode: school.udiseCode },
+      ipAddress: req.ip || "",
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "School settings and institutional branding updated successfully",
+      data: school,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Failed to update settings", error: error.message });
   }
 };

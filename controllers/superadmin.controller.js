@@ -3,6 +3,7 @@ import Subscription from "../models/Subscription.js";
 import User from "../models/User.js";
 import Student from "../models/Student.js";
 import Teacher from "../models/Teacher.js";
+import AuditLog from "../models/AuditLog.js";
 
 export const getDashboardStats = async (req, res) => {
   try {
@@ -166,15 +167,34 @@ export const createSchool = async (req, res) => {
       });
     }
 
+    // Calculate Plan Limits and Pricing
+    let finalLimit = studentLimit;
+    let price = 19999;
+    if (plan === "starter") {
+      finalLimit = 250;
+      price = 9999;
+    } else if (plan === "professional") {
+      finalLimit = 750;
+      price = 19999;
+    } else if (plan === "premium") {
+      finalLimit = 2500;
+      price = 34999;
+    }
+
+    const schoolCount = await School.countDocuments();
+    const permanentSchoolId = `SCH-${new Date().getFullYear()}-${String(schoolCount + 1).padStart(4, "0")}`;
+
     // 1. Create School
     const school = await School.create({
       name,
       code: code.toUpperCase().trim(),
+      permanentSchoolId,
       email: email.toLowerCase().trim(),
       phone,
       address,
+      principalName: principalName || `${name} Principal`,
       status: "active",
-      studentLimit,
+      studentLimit: finalLimit,
     });
 
     // 2. Create Principal User
@@ -196,9 +216,20 @@ export const createSchool = async (req, res) => {
       schoolId: school._id,
       plan,
       status: "active",
-      studentLimit,
+      studentLimit: finalLimit,
+      price,
       startDate: new Date(),
       endDate,
+    });
+
+    await AuditLog.create({
+      schoolId: school._id,
+      userId: req.user?._id,
+      action: "SCHOOL_CREATED",
+      entity: "School",
+      entityId: school._id.toString(),
+      details: { name: school.name, code: school.code, permanentSchoolId, plan },
+      ipAddress: req.ip || "",
     });
 
     return res.status(201).json({
@@ -248,6 +279,16 @@ export const updateSchoolStatus = async (req, res) => {
         message: "School not found",
       });
     }
+
+    await AuditLog.create({
+      schoolId: school._id,
+      userId: req.user?._id,
+      action: "SCHOOL_STATUS_UPDATED",
+      entity: "School",
+      entityId: school._id.toString(),
+      details: { newStatus: status },
+      ipAddress: req.ip || "",
+    });
 
     return res.status(200).json({
       success: true,

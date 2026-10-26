@@ -51,6 +51,32 @@ const schoolSchema = new mongoose.Schema(
       ref: "AcademicSession",
       default: null,
     },
+    permanentSchoolId: {
+      type: String,
+      unique: true,
+      sparse: true,
+      trim: true,
+      index: true,
+    },
+    udiseCode: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    affiliationNumber: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    allowSelfRegistration: {
+      type: Boolean,
+      default: true,
+    },
+    principalName: {
+      type: String,
+      trim: true,
+      default: "",
+    },
   },
   {
     timestamps: true,

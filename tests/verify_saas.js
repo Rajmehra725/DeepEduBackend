@@ -171,10 +171,10 @@ async function runTests() {
   // 5. STUDENTS MANAGEMENT & SEARCH
   console.log("\n--- 5. STUDENT MANAGEMENT & SEARCH ---");
   try {
-    const res = await axios.get(`${BASE_URL}/students?search=Aarav`, {
+    const res = await axios.get(`${BASE_URL}/students?search=STU-1001`, {
       headers: { Authorization: `Bearer ${principalToken}` },
     });
-    assert(res.status === 200 && res.data.data.students.length >= 1, "Student search by name works");
+    assert(res.status === 200 && res.data.data.students.length >= 1, "Student search by admission number works");
     testStudentId = res.data.data.students[0]._id;
   } catch (err) {
     assert(false, `Student search failed: ${err.message}`);
@@ -602,7 +602,292 @@ async function runTests() {
     assert(false, `Permanent ID verification failed: ${err.message}`);
   }
 
-  console.log("\n=======================================================");
+  // 20. PUBLIC SCHOOL DISCOVERY & VERIFICATION
+  console.log("\n--- 20. PUBLIC SCHOOL DISCOVERY & VERIFICATION ---");
+  try {
+    const res = await axios.get(`${BASE_URL}/academics/schools/verify/DPS01`);
+    assert(
+      res.status === 200 && res.data.success && res.data.data.name.includes("Delhi Public"),
+      "Public school verification succeeds by school code (DPS01)"
+    );
+  } catch (err) {
+    assert(false, `School verification failed: ${err.message}`);
+  }
+
+  try {
+    await axios.get(`${BASE_URL}/academics/schools/verify/NONEXISTENT_SCHOOL_9999`);
+    assert(false, "Non-existent school verification should return 404");
+  } catch (err) {
+    assert(err.response?.status === 404, "Non-existent school verification rejected with HTTP 404");
+  }
+
+  // 21. CAPTCHA SECURITY ENFORCEMENT
+  console.log("\n--- 21. CAPTCHA SECURITY CHALLENGE ---");
+  try {
+    await axios.post(`${BASE_URL}/teachers/register-request`, {
+      schoolIdentifier: "DPS01",
+      name: "No Captcha Teacher",
+      email: "nocaptcha@dps.edu",
+      password: "Password@123",
+    });
+    assert(false, "Registration request without CAPTCHA should be rejected with 400");
+  } catch (err) {
+    assert(
+      err.response?.status === 400 && err.response?.data?.code === "CAPTCHA_REQUIRED",
+      "Missing CAPTCHA token rejected with HTTP 400 and CAPTCHA_REQUIRED code"
+    );
+  }
+
+  // 22. TEACHER SELF-REGISTRATION & PRINCIPAL APPROVAL
+  console.log("\n--- 22. TEACHER REGISTRATION & PRINCIPAL APPROVAL ---");
+  let teacherRequestId = "";
+  const uniqueTeacherEmail = `teacher.reg.${Date.now()}@dps.edu`;
+  try {
+    const res = await axios.post(`${BASE_URL}/teachers/register-request`, {
+      schoolIdentifier: "DPS01",
+      name: "Prof. Priya Saxena",
+      email: uniqueTeacherEmail,
+      phone: "+91 98765 43219",
+      password: "PriyaSecurePassword@2026",
+      qualifications: "M.Sc. Mathematics, B.Ed.",
+      experience: "7 Years in Secondary Education",
+      designation: "PGT Mathematics",
+      subjectSpecialization: "Mathematics & Statistics",
+      captchaToken: "test-captcha-token",
+    });
+    assert(
+      res.status === 201 && res.data.success && Boolean(res.data.data.requestId),
+      "Teacher self-registration submitted with valid CAPTCHA"
+    );
+    teacherRequestId = res.data.data.requestId;
+  } catch (err) {
+    assert(false, `Teacher self-registration failed: ${err.message}`);
+  }
+
+  try {
+    const pendingRes = await axios.get(`${BASE_URL}/academics/approval-center/requests?status=Pending`, {
+      headers: { Authorization: `Bearer ${principalToken}` },
+    });
+    assert(
+      pendingRes.status === 200 &&
+        Array.isArray(pendingRes.data.data) &&
+        pendingRes.data.data.some((r) => r._id === teacherRequestId),
+      "Principal retrieves pending approval requests containing newly registered teacher"
+    );
+  } catch (err) {
+    assert(false, `Principal approval center fetch failed: ${err.message}`);
+  }
+
+  try {
+    const reviewRes = await axios.put(
+      `${BASE_URL}/academics/approval-center/requests/${teacherRequestId}/review`,
+      { action: "approve" },
+      { headers: { Authorization: `Bearer ${principalToken}` } }
+    );
+    assert(
+      reviewRes.status === 200 && reviewRes.data.success && reviewRes.data.data.status === "Approved",
+      "Principal approves teacher registration request"
+    );
+  } catch (err) {
+    assert(false, `Principal approval review failed: ${err.message}`);
+  }
+
+  try {
+    const loginRes = await axios.post(`${BASE_URL}/auth/login`, {
+      email: uniqueTeacherEmail,
+      password: "PriyaSecurePassword@2026",
+    });
+    assert(
+      loginRes.status === 200 &&
+        loginRes.data.data.user.role === "teacher" &&
+        Boolean(loginRes.data.data.token),
+      "Newly approved teacher logs in successfully with their requested password"
+    );
+  } catch (err) {
+    assert(false, `Newly approved teacher login failed: ${err.message}`);
+  }
+
+  // 23. STUDENT ADMISSION REQUEST & APPROVAL LIFECYCLE
+  console.log("\n--- 23. STUDENT ADMISSION REQUEST & APPROVAL LIFECYCLE ---");
+  let studentRequestId = "";
+  const uniqueParentEmail = `parent.${Date.now()}@gmail.com`;
+  const uniqueParentPhone = `+91 98${Date.now().toString().slice(-8)}`;
+  try {
+    const res = await axios.post(`${BASE_URL}/students/register-request`, {
+      schoolIdentifier: "DPS01",
+      name: "Aarav Mishra",
+      parentName: "Sanjay Mishra",
+      parentPhone: uniqueParentPhone,
+      parentEmail: uniqueParentEmail,
+      classId: testClassId,
+      sectionId: testSectionId,
+      address: "B-44, Sector 62, Noida",
+      captchaToken: "test-captcha-token",
+    });
+    assert(
+      res.status === 201 && res.data.success && Boolean(res.data.data.requestId),
+      "Student admission request submitted with parent details and CAPTCHA"
+    );
+    studentRequestId = res.data.data.requestId;
+  } catch (err) {
+    assert(false, `Student admission request failed: ${err.message}`);
+  }
+
+  try {
+    const reviewRes = await axios.put(
+      `${BASE_URL}/academics/approval-center/requests/${studentRequestId}/review`,
+      { action: "approve" },
+      { headers: { Authorization: `Bearer ${principalToken}` } }
+    );
+    assert(
+      reviewRes.status === 200 &&
+        reviewRes.data.success &&
+        reviewRes.data.data.permanentId &&
+        reviewRes.data.data.permanentId.startsWith("STU-"),
+      "Principal approves student admission; permanent student ID and parent user provisioned"
+    );
+  } catch (err) {
+    assert(false, `Student admission approval failed: ${err.message}`);
+  }
+
+  try {
+    const parentLoginRes = await axios.post(`${BASE_URL}/auth/login`, {
+      email: uniqueParentEmail,
+      password: "Parent@123",
+    });
+    assert(
+      parentLoginRes.status === 200 &&
+        parentLoginRes.data.data.user.role === "parent" &&
+        Array.isArray(parentLoginRes.data.data.linkedChildren) &&
+        parentLoginRes.data.data.linkedChildren.length >= 1,
+      "Newly created parent user logs in and accesses linked student ward"
+    );
+  } catch (err) {
+    assert(false, `Parent user login failed: ${err.message}`);
+  }
+
+  // 24. PASSWORD RECOVERY & RESET FLOW
+  console.log("\n--- 24. PASSWORD RECOVERY & RESET WORKFLOW ---");
+  let resetToken = "";
+  try {
+    const forgotRes = await axios.post(`${BASE_URL}/auth/forgot-password`, {
+      email: uniqueTeacherEmail,
+      captchaToken: "test-captcha-token",
+    });
+    assert(
+      forgotRes.status === 200 && forgotRes.data.success,
+      "Password reset token requested with CAPTCHA verification"
+    );
+    resetToken = forgotRes.data.data?.resetToken;
+  } catch (err) {
+    assert(false, `Forgot password request failed: ${err.message}`);
+  }
+
+  if (resetToken) {
+    try {
+      const resetRes = await axios.post(`${BASE_URL}/auth/reset-password`, {
+        token: resetToken,
+        newPassword: "UpdatedPriyaPassword@2026",
+      });
+      assert(
+        resetRes.status === 200 && resetRes.data.success,
+        "Password reset executed with validated token"
+      );
+
+      const newLoginRes = await axios.post(`${BASE_URL}/auth/login`, {
+        email: uniqueTeacherEmail,
+        password: "UpdatedPriyaPassword@2026",
+      });
+      assert(
+        newLoginRes.status === 200 && Boolean(newLoginRes.data.data.token),
+        "User successfully authenticates using updated password"
+      );
+    } catch (err) {
+      assert(false, `Password reset flow failed: ${err.message}`);
+    }
+  }
+
+  // 25. BULK CSV INGESTION & SUBSCRIPTION LIMIT
+  console.log("\n--- 25. BULK CSV DATA INGESTION & QUOTA ENFORCEMENT ---");
+  try {
+    const csvRows = [
+      {
+        firstName: "Rohan",
+        lastName: "Gupta",
+        parentName: "Vikas Gupta",
+        parentPhone: "9876500001",
+        parentEmail: `vikas.${Date.now()}@gmail.com`,
+        classId: testClassId,
+        sectionId: testSectionId,
+        gender: "male",
+      },
+      {
+        firstName: "Ananya",
+        lastName: "Singh",
+        parentName: "Rajesh Singh",
+        parentPhone: "9876500002",
+        parentEmail: `rajesh.${Date.now()}@gmail.com`,
+        classId: testClassId,
+        sectionId: testSectionId,
+        gender: "female",
+      },
+    ];
+
+    const importRes = await axios.post(
+      `${BASE_URL}/students/import-csv`,
+      { rows: csvRows },
+      { headers: { Authorization: `Bearer ${principalToken}` } }
+    );
+    assert(
+      importRes.status === 201 &&
+        importRes.data.data.importedCount === 2 &&
+        importRes.data.data.permanentIds.every((id) => id.startsWith("STU-")),
+      "Bulk student CSV rows validated and imported with sequential permanent IDs"
+    );
+  } catch (err) {
+    assert(false, `Bulk CSV import failed: ${err.message}`);
+  }
+
+  // 26. MULTI-TENANT ISOLATION SECURITY GUARD
+  console.log("\n--- 26. MULTI-TENANT ISOLATION SECURITY ATTACK DEFENSE ---");
+  try {
+    const rivalSchoolCode = `STX${Date.now().toString().slice(-4)}`;
+    const rivalEmail = `principal.stx.${Date.now()}@stxavier.edu`;
+    const rivalSchoolRes = await axios.post(
+      `${BASE_URL}/superadmin/schools`,
+      {
+        name: "St. Xavier Independent High School",
+        code: rivalSchoolCode,
+        email: rivalEmail,
+        principalEmail: rivalEmail,
+        principalPassword: "RivalPrincipal@123",
+        plan: "starter",
+      },
+      { headers: { Authorization: `Bearer ${superAdminToken}` } }
+    );
+
+    // Login as rival school principal
+    const rivalLoginRes = await axios.post(`${BASE_URL}/auth/login`, {
+      email: rivalEmail,
+      password: "RivalPrincipal@123",
+    });
+    const rivalToken = rivalLoginRes.data.data.token;
+
+    // Rival principal attempts to access DPS01 student details
+    try {
+      await axios.get(`${BASE_URL}/students/${testStudentId}`, {
+        headers: { Authorization: `Bearer ${rivalToken}` },
+      });
+      assert(false, "Cross-tenant student record access should be blocked with 404/403");
+    } catch (crossErr) {
+      assert(
+        crossErr.response?.status === 404 || crossErr.response?.status === 403,
+        "Tenant isolation enforced: Cross-tenant data access rejected (HTTP 404/403)"
+      );
+    }
+  } catch (err) {
+    assert(false, `Multi-tenant isolation test failed: ${err.message}`);
+  }
   console.log(`TEST SUMMARY: ${passedCount} PASSED, ${failedCount} FAILED`);
   console.log("=======================================================\n");
 

@@ -11,18 +11,18 @@ const subscriptionSchema = new mongoose.Schema(
     },
     plan: {
       type: String,
-      enum: ["starter", "growth", "enterprise", "custom"],
-      default: "growth",
+      enum: ["starter", "professional", "premium", "growth", "enterprise", "custom"],
+      default: "professional",
     },
     status: {
       type: String,
-      enum: ["active", "trial", "past_due", "cancelled", "expired"],
-      default: "trial",
+      enum: ["active", "trial", "past_due", "cancelled", "expired", "suspended"],
+      default: "active",
       index: true,
     },
     studentLimit: {
       type: Number,
-      default: 500,
+      default: 750,
     },
     startDate: {
       type: Date,

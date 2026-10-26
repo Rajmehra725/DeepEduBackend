@@ -6,12 +6,18 @@ import {
   updateTeacher,
   deleteTeacher,
   getMyAssignedClasses,
+  importTeachersCSV,
 } from "../controllers/teacher.controller.js";
+import { submitTeacherRegistrationRequest } from "../controllers/approvalCenter.controller.js";
 import { authenticate } from "../middleware/auth.js";
 import { authorize } from "../middleware/role.js";
 import { requireTenant } from "../middleware/tenant.js";
+import { verifyCaptcha } from "../middleware/captcha.js";
 
 const router = express.Router();
+
+// Public: Teacher self-registration request
+router.post("/register-request", verifyCaptcha, submitTeacherRegistrationRequest);
 
 router.use(authenticate, requireTenant);
 
@@ -24,6 +30,7 @@ router.get("/:id", authorize("principal", "teacher", "superadmin"), getTeacherBy
 
 // Principal only management
 router.post("/", authorize("principal", "superadmin"), createTeacher);
+router.post("/import-csv", authorize("principal", "superadmin"), importTeachersCSV);
 router.put("/:id", authorize("principal", "superadmin"), updateTeacher);
 router.delete("/:id", authorize("principal", "superadmin"), deleteTeacher);
 

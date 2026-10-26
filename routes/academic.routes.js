@@ -9,14 +9,32 @@ import {
   createSession,
   assignSubjectTeacher,
   getClassAssignments,
+  getSchoolSettings,
+  updateSchoolSettings,
 } from "../controllers/academic.controller.js";
+import {
+  verifySchool,
+  getPendingRequests,
+  reviewRequest,
+} from "../controllers/approvalCenter.controller.js";
 import { authenticate } from "../middleware/auth.js";
 import { authorize } from "../middleware/role.js";
 import { requireTenant } from "../middleware/tenant.js";
 
 const router = express.Router();
 
+// Public: Verify school existence by Code or permanent ID
+router.get("/schools/verify/:identifier", verifySchool);
+
 router.use(authenticate, requireTenant);
+
+// School Settings & Institutional Branding
+router.get("/settings", authorize("principal", "superadmin"), getSchoolSettings);
+router.put("/settings", authorize("principal", "superadmin"), updateSchoolSettings);
+
+// Principal Approval Center for teacher & student self-registrations
+router.get("/approval-center/requests", authorize("principal", "superadmin"), getPendingRequests);
+router.put("/approval-center/requests/:id/review", authorize("principal", "superadmin"), reviewRequest);
 
 // Read routes available to Principal, Teacher, SuperAdmin
 router.get("/classes", getClasses);
