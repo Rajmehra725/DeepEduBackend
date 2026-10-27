@@ -25,7 +25,10 @@ export const listCertificates = async (req, res) => {
       }
       filter.studentId = student._id;
     } else if (req.user.role === "parent") {
-      const students = await Student.find({ parentUserId: req.user._id, schoolId });
+      const students = await Student.find({
+        schoolId,
+        $or: [{ parentUserId: req.user._id }, { parentPhone: req.user.phone }],
+      });
       const studentIds = students.map((s) => s._id);
       filter.studentId = { $in: studentIds };
     }

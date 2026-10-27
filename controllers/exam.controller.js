@@ -316,6 +316,18 @@ export const getStudentReportCard = async (req, res) => {
       });
     }
 
+    if (req.user.role === "parent") {
+      const isLinked =
+        (student.parentUserId && student.parentUserId.toString() === req.user._id.toString()) ||
+        (student.parentPhone && student.parentPhone === req.user.phone);
+      if (!isLinked) {
+        return res.status(403).json({
+          success: false,
+          message: "Forbidden: You are not authorized to view this student's report card",
+        });
+      }
+    }
+
     const examQuery = { schoolId, status: "Published" };
     if (examId) examQuery._id = examId;
 

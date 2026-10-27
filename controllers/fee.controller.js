@@ -94,6 +94,18 @@ export const getStudentFeeDetails = async (req, res) => {
       });
     }
 
+    if (req.user.role === "parent") {
+      const isLinked =
+        (student.parentUserId && student.parentUserId.toString() === req.user._id.toString()) ||
+        (student.parentPhone && student.parentPhone === req.user.phone);
+      if (!isLinked) {
+        return res.status(403).json({
+          success: false,
+          message: "Forbidden: You are not authorized to view this student's fee records",
+        });
+      }
+    }
+
     // Get fee structures applicable to this student's class
     const feeStructures = await FeeStructure.find({
       schoolId,
