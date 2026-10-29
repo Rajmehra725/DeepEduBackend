@@ -112,7 +112,20 @@ export const addMediaToAlbum = async (req, res) => {
   try {
     const schoolId = req.schoolId;
     const { id } = req.params;
-    const { items } = req.body; // array of { url, caption, title, mediaType, publicId }
+    let items = req.body.items;
+
+    // Support single item payload { url, caption, mediaType } or items array
+    if (!items && (req.body.url || req.body.coverImage)) {
+      items = [
+        {
+          url: req.body.url || req.body.coverImage,
+          caption: req.body.caption || "",
+          title: req.body.title || "",
+          mediaType: req.body.mediaType || req.body.type || "image",
+          publicId: req.body.publicId || "",
+        },
+      ];
+    }
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({

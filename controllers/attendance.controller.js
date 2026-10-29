@@ -139,7 +139,11 @@ export const markAttendance = async (req, res) => {
     const absentStudentsToNotify = [];
 
     for (const record of records) {
-      const { studentId, status, remarks = "" } = record;
+      const { studentId, remarks = "" } = record;
+      const rawStatus = (record.status || "").trim();
+      const titleStatus = rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1).toLowerCase();
+      const status = titleStatus === "Late" ? "Leave" : titleStatus;
+
       if (!["Present", "Absent", "Leave"].includes(status)) continue;
 
       const attendance = await Attendance.findOneAndUpdate(
