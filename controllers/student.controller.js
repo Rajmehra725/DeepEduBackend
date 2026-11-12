@@ -4,6 +4,12 @@ import School from "../models/School.js";
 import Subscription from "../models/Subscription.js";
 import ClassRoom from "../models/ClassRoom.js";
 import Section from "../models/Section.js";
+import Attendance from "../models/Attendance.js";
+import FeePayment from "../models/FeePayment.js";
+import FeeStructure from "../models/FeeStructure.js";
+import ExamMark from "../models/ExamMark.js";
+import Homework from "../models/Homework.js";
+import AcademicSession from "../models/AcademicSession.js";
 import AuditLog from "../models/AuditLog.js";
 import { generatePermanentId } from "../utils/idGenerator.js";
 
@@ -14,6 +20,7 @@ export const getStudents = async (req, res) => {
       search = "",
       classId,
       sectionId,
+      academicSessionId,
       status = "active",
       page = 1,
       limit = 10,
@@ -33,6 +40,10 @@ export const getStudents = async (req, res) => {
       query.sectionId = sectionId;
     }
 
+    if (academicSessionId) {
+      query.academicSessionId = academicSessionId;
+    }
+
     if (search) {
       const searchRegex = { $regex: search.trim(), $options: "i" };
       query.$or = [
@@ -40,6 +51,8 @@ export const getStudents = async (req, res) => {
         { lastName: searchRegex },
         { admissionNumber: searchRegex },
         { permanentId: searchRegex },
+        { rollNumber: searchRegex },
+        { aadharNumber: searchRegex },
         { parentName: searchRegex },
         { parentPhone: searchRegex },
       ];
@@ -53,6 +66,7 @@ export const getStudents = async (req, res) => {
     const students = await Student.find(query)
       .populate("classId", "name numericGrade")
       .populate("sectionId", "name")
+      .populate("academicSessionId", "name")
       .sort({ admissionNumber: 1, firstName: 1 })
       .skip(skip)
       .limit(limitNum);
@@ -64,7 +78,7 @@ export const getStudents = async (req, res) => {
         pagination: {
           total,
           page: pageNum,
-          pages: Math.ceil(total / limitNum),
+          pages: Math.ceil(total / limitNum) || 1,
           limit: limitNum,
         },
       },
@@ -86,7 +100,8 @@ export const getStudentById = async (req, res) => {
     const student = await Student.findOne({ _id: id, schoolId })
       .populate("classId", "name numericGrade")
       .populate("sectionId", "name")
-      .populate("userId", "email status");
+      .populate("academicSessionId", "name")
+      .populate("userId", "email status profileImage");
 
     if (!student) {
       return res.status(404).json({
@@ -95,9 +110,67 @@ export const getStudentById = async (req, res) => {
       });
     }
 
+    // Parallel fetch attendance history, fee records, examination marks, and homework
+    const [attendanceRecords, feePayments, feeStructure, examMarks, homeworkRecords] = await Promise.all([
+      Attendance.find({ studentId: id, schoolId }).sort({ date: -1 }).limit(30),
+      FeePayment.find({ studentId: id, schoolId }).sort({ paymentDate: -1 }),
+      FeeStructure.findOne({ schoolId, classId: student.classId?._id || student.classId }),
+      ExamMark.find({ studentId: id, schoolId })
+        .populate("examId", "name term startDate endDate")
+        .populate("subjectId", "name code"),
+      Homework.find({
+        schoolId,
+        classId: student.classId?._id || student.classId,
+        sectionId: student.sectionId?._id || student.sectionId,
+      })
+        .populate("subjectId", "name")
+        .sort({ dueDate: -1 })
+        .limit(10),
+    ]);
+
+    // Attendance stats
+    const totalDays = attendanceRecords.length;
+    let presentCount = 0;
+    let absentCount = 0;
+    let leaveCount = 0;
+    attendanceRecords.forEach((r) => {
+      if (r.status === "Present") presentCount++;
+      else if (r.status === "Absent") absentCount++;
+      else if (r.status === "Leave") leaveCount++;
+    });
+    const attendancePercentage = totalDays > 0 ? Math.round((presentCount / totalDays) * 100) : 100;
+
+    // Fee calculations
+    const totalPaid = feePayments.reduce((acc, p) => acc + (p.amount || 0), 0);
+    const totalExpected = feeStructure?.amount || 0;
+    const totalDues = Math.max(0, totalExpected - totalPaid);
+
+    const studentObj = student.toObject();
+    const payload = {
+      ...studentObj,
+      student: studentObj,
+      attendanceSummary: {
+        totalDays,
+        present: presentCount,
+        absent: absentCount,
+        leave: leaveCount,
+        percentage: attendancePercentage,
+        recentRecords: attendanceRecords,
+      },
+      feeSummary: {
+        totalExpected,
+        totalPaid,
+        totalDues,
+        payments: feePayments,
+        feeStructure,
+      },
+      examinationResults: examMarks || [],
+      homeworkRecords: homeworkRecords || [],
+    };
+
     return res.status(200).json({
       success: true,
-      data: student,
+      data: payload,
     });
   } catch (error) {
     return res.status(500).json({
@@ -125,6 +198,19 @@ export const createStudent = async (req, res) => {
       parentPhone,
       parentEmail,
       address,
+      profileImage = "",
+      bloodGroup = "",
+      category = "General",
+      religion = "",
+      nationality = "Indian",
+      aadharNumber = "",
+      guardianName = "",
+      guardianPhone = "",
+      guardianEmail = "",
+      guardianRelation = "",
+      emergencyContact = {},
+      previousSchool = "",
+      documents = [],
       studentPassword = "Student@123",
     } = req.body;
 
@@ -175,8 +261,12 @@ export const createStudent = async (req, res) => {
         role: "student",
         schoolId,
         phone: parentPhone,
+        profileImage: profileImage || "",
         status: "active",
       });
+    } else if (profileImage && !user.profileImage) {
+      user.profileImage = profileImage;
+      await user.save();
     }
 
     // Optionally link or create parent user account
@@ -217,6 +307,19 @@ export const createStudent = async (req, res) => {
       parentEmail: parentEmail ? parentEmail.trim().toLowerCase() : "",
       parentUserId: parentUser ? parentUser._id : null,
       address: address ? address.trim() : "",
+      profileImage: profileImage || "",
+      bloodGroup: bloodGroup ? bloodGroup.trim() : "",
+      category: category || "General",
+      religion: religion ? religion.trim() : "",
+      nationality: nationality || "Indian",
+      aadharNumber: aadharNumber ? aadharNumber.trim() : "",
+      guardianName: guardianName ? guardianName.trim() : "",
+      guardianPhone: guardianPhone ? guardianPhone.trim() : "",
+      guardianEmail: guardianEmail ? guardianEmail.trim().toLowerCase() : "",
+      guardianRelation: guardianRelation ? guardianRelation.trim() : "",
+      emergencyContact: emergencyContact || {},
+      previousSchool: previousSchool ? previousSchool.trim() : "",
+      documents: Array.isArray(documents) ? documents : [],
       status: "active",
     });
 
@@ -230,7 +333,8 @@ export const createStudent = async (req, res) => {
 
     const populatedStudent = await Student.findById(newStudent._id)
       .populate("classId", "name numericGrade")
-      .populate("sectionId", "name");
+      .populate("sectionId", "name")
+      .populate("academicSessionId", "name");
 
     return res.status(201).json({
       success: true,
@@ -267,6 +371,11 @@ export const updateStudent = async (req, res) => {
       });
     }
 
+    // If profileImage updated, sync with User
+    if (updateData.profileImage && student.userId) {
+      await User.findByIdAndUpdate(student.userId, { profileImage: updateData.profileImage });
+    }
+
     // Update student fields
     const updated = await Student.findByIdAndUpdate(
       id,
@@ -274,7 +383,8 @@ export const updateStudent = async (req, res) => {
       { new: true }
     )
       .populate("classId", "name numericGrade")
-      .populate("sectionId", "name");
+      .populate("sectionId", "name")
+      .populate("academicSessionId", "name");
 
     return res.status(200).json({
       success: true,
@@ -285,6 +395,205 @@ export const updateStudent = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to update student",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Add Document to Student Profile
+ */
+export const addStudentDocument = async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    const { id } = req.params;
+    const { name, type = "document", url, publicId = "" } = req.body;
+
+    if (!name || !url) {
+      return res.status(400).json({
+        success: false,
+        message: "Document name and file URL are required",
+      });
+    }
+
+    const student = await Student.findOne({ _id: id, schoolId });
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: "Student not found",
+      });
+    }
+
+    student.documents.push({
+      name: name.trim(),
+      type,
+      url,
+      publicId,
+      uploadedAt: new Date(),
+    });
+
+    await student.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Document attached successfully",
+      data: student.documents,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to add document",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Delete Document from Student Profile
+ */
+export const deleteStudentDocument = async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    const { id, docId } = req.params;
+
+    const student = await Student.findOne({ _id: id, schoolId });
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: "Student not found",
+      });
+    }
+
+    student.documents = student.documents.filter(
+      (doc) => doc._id.toString() !== docId
+    );
+
+    await student.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Document removed successfully",
+      data: student.documents,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to delete document",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Update Student Photo
+ */
+export const updateStudentPhoto = async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    const { id } = req.params;
+    const { profileImage } = req.body;
+
+    if (!profileImage) {
+      return res.status(400).json({
+        success: false,
+        message: "Photo URL is required",
+      });
+    }
+
+    const student = await Student.findOneAndUpdate(
+      { _id: id, schoolId },
+      { $set: { profileImage } },
+      { new: true }
+    );
+
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: "Student not found",
+      });
+    }
+
+    if (student.userId) {
+      await User.findByIdAndUpdate(student.userId, { profileImage });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Student photo updated successfully",
+      data: { profileImage: student.profileImage },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update student photo",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Promote Student to Next Class/Section
+ */
+export const promoteStudent = async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    const { id } = req.params;
+    const { toClassId, toSectionId, sessionId, rollNumber, remarks = "" } = req.body;
+
+    if (!toClassId || !toSectionId) {
+      return res.status(400).json({
+        success: false,
+        message: "Target class and section are required for promotion",
+      });
+    }
+
+    const student = await Student.findOne({ _id: id, schoolId })
+      .populate("classId", "name")
+      .populate("sectionId", "name")
+      .populate("academicSessionId", "name");
+
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: "Student not found",
+      });
+    }
+
+    // Record past session in promotion history
+    student.promotionHistory.push({
+      sessionId: student.academicSessionId?._id || student.academicSessionId,
+      sessionName: student.academicSessionId?.name || "Previous Session",
+      classId: student.classId?._id || student.classId,
+      className: student.classId?.name || "Previous Class",
+      sectionId: student.sectionId?._id || student.sectionId,
+      sectionName: student.sectionId?.name || "Previous Section",
+      rollNumber: student.rollNumber || "",
+      promotedAt: new Date(),
+      status: "Promoted",
+      remarks,
+    });
+
+    student.classId = toClassId;
+    student.sectionId = toSectionId;
+    if (sessionId) student.academicSessionId = sessionId;
+    if (rollNumber) student.rollNumber = rollNumber;
+
+    await student.save();
+
+    const updated = await Student.findById(id)
+      .populate("classId", "name numericGrade")
+      .populate("sectionId", "name")
+      .populate("academicSessionId", "name");
+
+    return res.status(200).json({
+      success: true,
+      message: "Student promoted successfully",
+      data: updated,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to promote student",
       error: error.message,
     });
   }

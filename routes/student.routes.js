@@ -7,6 +7,10 @@ import {
   deleteStudent,
   importStudentsCSV,
   linkParentStudent,
+  addStudentDocument,
+  deleteStudentDocument,
+  updateStudentPhoto,
+  promoteStudent,
 } from "../controllers/student.controller.js";
 import { submitStudentRegistrationRequest } from "../controllers/approvalCenter.controller.js";
 import { authenticate } from "../middleware/auth.js";
@@ -30,6 +34,10 @@ router.post("/", authorize("principal", "superadmin"), createStudent);
 router.post("/import-csv", authorize("principal", "superadmin"), importStudentsCSV);
 router.post("/link-parent", authorize("principal", "superadmin"), linkParentStudent);
 router.put("/:id", authorize("principal", "superadmin"), updateStudent);
+router.put("/:id/photo", authorize("principal", "superadmin"), updateStudentPhoto);
+router.post("/:id/documents", authorize("principal", "superadmin"), addStudentDocument);
+router.delete("/:id/documents/:docId", authorize("principal", "superadmin"), deleteStudentDocument);
+router.post("/:id/promote", authorize("principal", "superadmin"), promoteStudent);
 router.delete("/:id", authorize("principal", "superadmin"), deleteStudent);
 
 export default router;

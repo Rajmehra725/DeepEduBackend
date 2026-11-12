@@ -24,6 +24,7 @@ import timetableRoutes from "./routes/timetable.routes.js";
 import marksheetRoutes from "./routes/marksheet.routes.js";
 import certificateRoutes from "./routes/certificate.routes.js";
 import galleryRoutes from "./routes/gallery.routes.js";
+import uploadRoutes from "./routes/upload.routes.js";
 
 const app = express();
 
@@ -115,6 +116,7 @@ app.use("/api/timetable", timetableRoutes);
 app.use("/api/marksheets", marksheetRoutes);
 app.use("/api/certificates", certificateRoutes);
 app.use("/api/gallery", galleryRoutes);
+app.use("/api/upload", uploadRoutes);
 
 // ================= 404 NOT FOUND HANDLER =================
 

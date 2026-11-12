@@ -98,6 +98,89 @@ const studentSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    bloodGroup: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    category: {
+      type: String,
+      trim: true,
+      default: "General",
+    },
+    religion: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    nationality: {
+      type: String,
+      trim: true,
+      default: "Indian",
+    },
+    aadharNumber: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    guardianName: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    guardianPhone: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    guardianEmail: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      default: "",
+    },
+    guardianRelation: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    emergencyContact: {
+      name: { type: String, default: "" },
+      phone: { type: String, default: "" },
+      relation: { type: String, default: "" },
+    },
+    admissionDate: {
+      type: Date,
+      default: Date.now,
+    },
+    previousSchool: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    documents: [
+      {
+        name: { type: String, required: true },
+        type: { type: String, default: "document" },
+        url: { type: String, required: true },
+        publicId: { type: String, default: "" },
+        uploadedAt: { type: Date, default: Date.now },
+      },
+    ],
+    promotionHistory: [
+      {
+        sessionId: { type: mongoose.Schema.Types.ObjectId, ref: "AcademicSession" },
+        sessionName: { type: String, default: "" },
+        classId: { type: mongoose.Schema.Types.ObjectId, ref: "ClassRoom" },
+        className: { type: String, default: "" },
+        sectionId: { type: mongoose.Schema.Types.ObjectId, ref: "Section" },
+        sectionName: { type: String, default: "" },
+        rollNumber: { type: String, default: "" },
+        promotedAt: { type: Date, default: Date.now },
+        status: { type: String, default: "Promoted" },
+        remarks: { type: String, default: "" },
+      },
+    ],
     status: {
       type: String,
       enum: ["active", "inactive", "transferred", "archived"],

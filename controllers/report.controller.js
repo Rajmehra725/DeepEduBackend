@@ -1,6 +1,17 @@
 import Student from "../models/Student.js";
 import Attendance from "../models/Attendance.js";
 import FeePayment from "../models/FeePayment.js";
+import Teacher from "../models/Teacher.js";
+import ClassRoom from "../models/ClassRoom.js";
+import Section from "../models/Section.js";
+import Subject from "../models/Subject.js";
+import FeeStructure from "../models/FeeStructure.js";
+import RegistrationRequest from "../models/RegistrationRequest.js";
+import Complaint from "../models/Complaint.js";
+import TeacherAttendance from "../models/TeacherAttendance.js";
+import Notice from "../models/Notice.js";
+import Exam from "../models/Exam.js";
+import AuditLog from "../models/AuditLog.js";
 
 export const exportStudents = async (req, res) => {
   try {
@@ -110,6 +121,139 @@ export const exportFees = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to export fees",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Principal Command Center Aggregation Endpoint.
+ * Computes live, authorized metrics across all school collections in a single round-trip.
+ */
+export const getPrincipalDashboardStats = async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    const today = new Date().toISOString().split("T")[0];
+    const startOfToday = new Date(new Date().setHours(0, 0, 0, 0));
+
+    const [
+      totalStudents,
+      totalTeachers,
+      totalClasses,
+      totalSections,
+      totalSubjects,
+      feeStructures,
+      feePayments,
+      pendingApprovals,
+      unresolvedComplaints,
+      todayTeacherAtt,
+      todayStudentAtt,
+      recentNotices,
+      upcomingExams,
+      pendingLeaves,
+      recentActivities,
+    ] = await Promise.all([
+      Student.countDocuments({ schoolId, status: "active" }),
+      Teacher.countDocuments({ schoolId, status: "active" }),
+      ClassRoom.countDocuments({ schoolId }),
+      Section.countDocuments({ schoolId }),
+      Subject.countDocuments({ schoolId }),
+      FeeStructure.find({ schoolId }),
+      FeePayment.aggregate([
+        { $match: { schoolId } },
+        { $group: { _id: null, totalCollected: { $sum: "$amount" } } },
+      ]),
+      RegistrationRequest.countDocuments({ schoolId, status: "Pending" }),
+      Complaint.countDocuments({ schoolId, status: { $ne: "Resolved" } }),
+      TeacherAttendance.find({ schoolId, date: today }),
+      Attendance.aggregate([
+        { $match: { schoolId, date: today } },
+        {
+          $group: {
+            _id: "$status",
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+      Notice.find({ schoolId }).sort({ createdAt: -1 }).limit(5),
+      Exam.find({ schoolId, endDate: { $gte: startOfToday } })
+        .sort({ startDate: 1 })
+        .limit(5),
+      TeacherAttendance.countDocuments({ schoolId, status: "Leave" }),
+      AuditLog.find({ schoolId })
+        .sort({ createdAt: -1 })
+        .limit(8)
+        .populate("userId", "name role"),
+    ]);
+
+    // Student attendance calculation
+    let presentStudents = 0;
+    let absentStudents = 0;
+    let leaveStudents = 0;
+    todayStudentAtt.forEach((rec) => {
+      if (rec._id === "Present") presentStudents = rec.count;
+      else if (rec._id === "Absent") absentStudents = rec.count;
+      else if (rec._id === "Leave") leaveStudents = rec.count;
+    });
+
+    const totalAttendanceMarked = presentStudents + absentStudents + leaveStudents;
+    const attendancePercentage =
+      totalAttendanceMarked > 0
+        ? Math.round((presentStudents / totalAttendanceMarked) * 100)
+        : 0;
+
+    // Faculty attendance
+    const presentTeachers = todayTeacherAtt.filter((t) => t.status === "Present").length;
+
+    // Fee calculations
+    const totalCollected = feePayments[0]?.totalCollected || 0;
+    const avgFeeStructure = feeStructures.reduce((sum, f) => sum + (f.amount || 0), 0);
+    const totalExpected = (avgFeeStructure || 0) * (totalStudents || 0);
+    const pendingFees = Math.max(0, totalExpected - totalCollected);
+
+    return res.status(200).json({
+      success: true,
+      message: "Principal dashboard metrics calculated successfully",
+      data: {
+        totalStudents,
+        totalTeachers,
+        totalStaff: totalTeachers,
+        attendance: {
+          present: presentStudents,
+          absent: absentStudents,
+          leave: leaveStudents,
+          percentage: attendancePercentage,
+          totalMarked: totalAttendanceMarked,
+          date: today,
+        },
+        fees: {
+          totalExpected,
+          totalCollected,
+          pendingFees,
+          structuresCount: feeStructures.length,
+        },
+        academic: {
+          classesCount: totalClasses,
+          sectionsCount: totalSections,
+          subjectsCount: totalSubjects,
+        },
+        staff: {
+          total: totalTeachers,
+          present: presentTeachers,
+          notCheckedIn: Math.max(0, totalTeachers - presentTeachers),
+        },
+        pendingApprovals,
+        unresolvedComplaints,
+        recentNotices,
+        upcomingExams: upcomingExams || [],
+        pendingLeaves: pendingLeaves || 0,
+        recentActivities: recentActivities || [],
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to compute Principal dashboard metrics",
       error: error.message,
     });
   }
