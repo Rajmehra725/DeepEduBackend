@@ -142,9 +142,9 @@ export const markAttendance = async (req, res) => {
       const { studentId, remarks = "" } = record;
       const rawStatus = (record.status || "").trim();
       const titleStatus = rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1).toLowerCase();
-      const status = titleStatus === "Late" ? "Leave" : titleStatus;
+      const status = titleStatus;
 
-      if (!["Present", "Absent", "Leave"].includes(status)) continue;
+      if (!["Present", "Absent", "Leave", "Late"].includes(status)) continue;
 
       const attendance = await Attendance.findOneAndUpdate(
         { schoolId, studentId, date, session },

@@ -184,3 +184,195 @@ export const deleteHomework = async (req, res) => {
     });
   }
 };
+
+export const updateHomework = async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    const { id } = req.params;
+    const { title, description, dueDate, attachmentUrl } = req.body;
+
+    const query = { _id: id, schoolId };
+    if (req.user.role === "teacher") {
+      const teacher = await Teacher.findOne({ userId: req.user._id, schoolId });
+      query.teacherId = teacher?._id;
+    }
+
+    const homework = await Homework.findOne(query);
+    if (!homework) {
+      return res.status(404).json({
+        success: false,
+        message: "Homework not found or unauthorized to update",
+      });
+    }
+
+    if (title) homework.title = title.trim();
+    if (description) homework.description = description.trim();
+    if (dueDate) homework.dueDate = new Date(dueDate);
+    if (attachmentUrl !== undefined) homework.attachmentUrl = attachmentUrl;
+
+    await homework.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Homework updated successfully",
+      data: homework,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update homework",
+      error: error.message,
+    });
+  }
+};
+
+export const getHomeworkSubmissions = async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    const { id } = req.params;
+
+    const homework = await Homework.findOne({ _id: id, schoolId })
+      .populate("classId", "name")
+      .populate("sectionId", "name")
+      .populate("subjectId", "name code")
+      .populate({
+        path: "submissions.studentId",
+        select: "firstName lastName admissionNumber rollNumber profileImage",
+      });
+
+    if (!homework) {
+      return res.status(404).json({
+        success: false,
+        message: "Homework not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        homework,
+        submissions: homework.submissions || [],
+        totalSubmissions: (homework.submissions || []).length,
+        evaluatedCount: (homework.submissions || []).filter((s) => s.status === "Evaluated").length,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch submissions",
+      error: error.message,
+    });
+  }
+};
+
+export const submitHomework = async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    const { id } = req.params;
+    const { attachmentUrl = "", notes = "" } = req.body;
+
+    const student = await Student.findOne({ userId: req.user._id, schoolId });
+    if (!student) {
+      return res.status(403).json({
+        success: false,
+        message: "Only enrolled students can submit homework",
+      });
+    }
+
+    const homework = await Homework.findOne({ _id: id, schoolId });
+    if (!homework) {
+      return res.status(404).json({
+        success: false,
+        message: "Homework not found",
+      });
+    }
+
+    const existingIndex = (homework.submissions || []).findIndex(
+      (s) => s.studentId.toString() === student._id.toString()
+    );
+
+    if (existingIndex >= 0) {
+      homework.submissions[existingIndex].attachmentUrl = attachmentUrl;
+      homework.submissions[existingIndex].notes = notes;
+      homework.submissions[existingIndex].submittedAt = new Date();
+      homework.submissions[existingIndex].status = "Submitted";
+    } else {
+      homework.submissions.push({
+        studentId: student._id,
+        attachmentUrl,
+        notes,
+        submittedAt: new Date(),
+        status: "Submitted",
+      });
+    }
+
+    await homework.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Homework submission recorded successfully",
+      data: homework,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to submit homework",
+      error: error.message,
+    });
+  }
+};
+
+export const evaluateHomeworkSubmission = async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    const { id, submissionId } = req.params;
+    const { marks = null, grade = "", feedback = "" } = req.body;
+
+    const homework = await Homework.findOne({ _id: id, schoolId });
+    if (!homework) {
+      return res.status(404).json({
+        success: false,
+        message: "Homework not found",
+      });
+    }
+
+    const sub = homework.submissions.id(submissionId);
+    if (!sub) {
+      return res.status(404).json({
+        success: false,
+        message: "Submission not found",
+      });
+    }
+
+    if (marks !== null && marks !== undefined) sub.marks = Number(marks);
+    if (grade) sub.grade = grade;
+    if (feedback !== undefined) sub.feedback = feedback.trim();
+    sub.status = "Evaluated";
+    sub.evaluatedAt = new Date();
+
+    await homework.save();
+
+    const student = await Student.findById(sub.studentId);
+    if (student?.userId) {
+      await Notification.create({
+        schoolId,
+        recipientId: student.userId,
+        title: `Homework Evaluated: ${homework.title}`,
+        message: `Your homework has been evaluated. Grade: ${grade || marks || "Evaluated"}.${feedback ? ` Feedback: ${feedback.trim()}` : ""}`,
+        type: "Homework",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Submission evaluated successfully",
+      data: sub,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to evaluate submission",
+      error: error.message,
+    });
+  }
+};

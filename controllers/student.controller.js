@@ -11,6 +11,9 @@ import ExamMark from "../models/ExamMark.js";
 import Homework from "../models/Homework.js";
 import AcademicSession from "../models/AcademicSession.js";
 import AuditLog from "../models/AuditLog.js";
+import Teacher from "../models/Teacher.js";
+import ClassSubjectTeacher from "../models/ClassSubjectTeacher.js";
+import Notification from "../models/Notification.js";
 import { generatePermanentId } from "../utils/idGenerator.js";
 
 export const getStudents = async (req, res) => {
@@ -32,12 +35,36 @@ export const getStudents = async (req, res) => {
       query.status = status;
     }
 
-    if (classId) {
-      query.classId = classId;
+    // Scope access for Teachers to their assigned sections
+    if (req.user?.role === "teacher") {
+      const teacher = await Teacher.findOne({ userId: req.user._id, schoolId });
+      if (teacher) {
+        const assignments = await ClassSubjectTeacher.find({ schoolId, teacherId: teacher._id });
+        const classTeacherSections = await Section.find({ schoolId, classTeacherId: teacher._id });
+        const allowedSectionIds = [
+          ...assignments.map((a) => a.sectionId),
+          ...classTeacherSections.map((s) => s._id),
+        ].filter(Boolean);
+
+        if (sectionId) {
+          const isAllowed = allowedSectionIds.some((id) => id.toString() === sectionId.toString());
+          if (!isAllowed) {
+            return res.status(403).json({
+              success: false,
+              message: "Forbidden: You are not assigned to this class section",
+            });
+          }
+          query.sectionId = sectionId;
+        } else if (allowedSectionIds.length > 0) {
+          query.sectionId = { $in: allowedSectionIds };
+        }
+      }
+    } else if (sectionId) {
+      query.sectionId = sectionId;
     }
 
-    if (sectionId) {
-      query.sectionId = sectionId;
+    if (classId) {
+      query.classId = classId;
     }
 
     if (academicSessionId) {
@@ -844,5 +871,78 @@ export const linkParentStudent = async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Linking failed", error: error.message });
+  }
+};
+
+/**
+ * Add Teacher Academic Remark to Student Profile
+ */
+export const addTeacherRemark = async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    const { id } = req.params;
+    const { remark, category = "Academic", subjectName = "" } = req.body;
+
+    if (!remark?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Remark text is required",
+      });
+    }
+
+    const student = await Student.findOne({ _id: id, schoolId });
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: "Student not found in your school",
+      });
+    }
+
+    let teacher = null;
+    let teacherName = req.user.name || "Faculty";
+    if (req.user.role === "teacher") {
+      teacher = await Teacher.findOne({ userId: req.user._id, schoolId });
+      if (teacher) {
+        teacherName = `${teacher.firstName} ${teacher.lastName || ""}`.trim();
+      }
+    }
+
+    if (!student.teacherRemarks) {
+      student.teacherRemarks = [];
+    }
+
+    student.teacherRemarks.unshift({
+      teacherId: teacher?._id,
+      teacherName,
+      subjectName: subjectName.trim(),
+      remark: remark.trim(),
+      category,
+      createdAt: new Date(),
+    });
+
+    await student.save();
+
+    // Notify student user if linked
+    if (student.userId) {
+      await Notification.create({
+        schoolId,
+        recipientId: student.userId,
+        title: `Academic Remark from ${teacherName}`,
+        message: `Remark (${category}): ${remark.trim()}`,
+        type: "Academics",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Teacher remark recorded successfully",
+      data: student.teacherRemarks,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to record teacher remark",
+      error: error.message,
+    });
   }
 };

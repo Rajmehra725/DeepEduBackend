@@ -11,6 +11,7 @@ import {
   deleteStudentDocument,
   updateStudentPhoto,
   promoteStudent,
+  addTeacherRemark,
 } from "../controllers/student.controller.js";
 import { submitStudentRegistrationRequest } from "../controllers/approvalCenter.controller.js";
 import { authenticate } from "../middleware/auth.js";
@@ -28,6 +29,9 @@ router.use(authenticate, requireTenant);
 // Search & list students (Principal, Teacher, SuperAdmin)
 router.get("/", authorize("principal", "teacher", "superadmin"), getStudents);
 router.get("/:id", getStudentById);
+
+// Remarks
+router.post("/:id/remarks", authorize("principal", "teacher"), addTeacherRemark);
 
 // Principal only management
 router.post("/", authorize("principal", "superadmin"), createStudent);

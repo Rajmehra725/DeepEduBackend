@@ -58,6 +58,48 @@ const homeworkSchema = new mongoose.Schema(
       enum: ["Active", "Archived"],
       default: "Active",
     },
+    submissions: [
+      {
+        studentId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Student",
+          required: true,
+        },
+        attachmentUrl: {
+          type: String,
+          default: "",
+        },
+        notes: {
+          type: String,
+          default: "",
+        },
+        submittedAt: {
+          type: Date,
+          default: Date.now,
+        },
+        status: {
+          type: String,
+          enum: ["Submitted", "Evaluated"],
+          default: "Submitted",
+        },
+        marks: {
+          type: Number,
+          default: null,
+        },
+        grade: {
+          type: String,
+          default: "",
+        },
+        feedback: {
+          type: String,
+          default: "",
+        },
+        evaluatedAt: {
+          type: Date,
+          default: null,
+        },
+      },
+    ],
   },
   {
     timestamps: true,

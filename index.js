@@ -25,6 +25,8 @@ import marksheetRoutes from "./routes/marksheet.routes.js";
 import certificateRoutes from "./routes/certificate.routes.js";
 import galleryRoutes from "./routes/gallery.routes.js";
 import uploadRoutes from "./routes/upload.routes.js";
+import leaveRoutes from "./routes/leave.routes.js";
+import studyMaterialRoutes from "./routes/studyMaterial.routes.js";
 
 const app = express();
 
@@ -117,6 +119,8 @@ app.use("/api/marksheets", marksheetRoutes);
 app.use("/api/certificates", certificateRoutes);
 app.use("/api/gallery", galleryRoutes);
 app.use("/api/upload", uploadRoutes);
+app.use("/api/leaves", leaveRoutes);
+app.use("/api/study-materials", studyMaterialRoutes);
 
 // ================= 404 NOT FOUND HANDLER =================
 

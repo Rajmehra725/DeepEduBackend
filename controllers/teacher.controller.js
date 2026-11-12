@@ -1,8 +1,16 @@
 import Teacher from "../models/Teacher.js";
 import User from "../models/User.js";
+import School from "../models/School.js";
 import ClassSubjectTeacher from "../models/ClassSubjectTeacher.js";
 import Section from "../models/Section.js";
 import Student from "../models/Student.js";
+import TimetableSlot from "../models/TimetableSlot.js";
+import TeacherAttendance from "../models/TeacherAttendance.js";
+import Homework from "../models/Homework.js";
+import Exam from "../models/Exam.js";
+import Notice from "../models/Notice.js";
+import Notification from "../models/Notification.js";
+import Complaint from "../models/Complaint.js";
 import AuditLog from "../models/AuditLog.js";
 import { generatePermanentId } from "../utils/idGenerator.js";
 
@@ -463,6 +471,176 @@ export const importTeachersCSV = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "CSV import failed",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get Comprehensive Teacher Dashboard Statistics & Real-time Feeds
+ */
+export const getTeacherDashboardStats = async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    const userId = req.user._id;
+
+    // 1. Fetch teacher record
+    const teacher = await Teacher.findOne({ userId, schoolId });
+    if (!teacher) {
+      return res.status(404).json({
+        success: false,
+        message: "No teacher profile linked to your user account",
+      });
+    }
+
+    // 2. Fetch school record
+    const school = await School.findById(schoolId).select("name code logo address phone email");
+
+    // 3. Fetch assigned classes & subjects
+    const assignments = await ClassSubjectTeacher.find({ schoolId, teacherId: teacher._id })
+      .populate("classId", "name numericGrade")
+      .populate("sectionId", "name")
+      .populate("subjectId", "name code type");
+
+    const classTeacherSections = await Section.find({ schoolId, classTeacherId: teacher._id })
+      .populate("classId", "name numericGrade");
+
+    // Unique classes & sections
+    const sectionIds = [
+      ...assignments.map((a) => a.sectionId?._id || a.sectionId),
+      ...classTeacherSections.map((s) => s._id),
+    ].filter(Boolean);
+
+    const uniqueSectionIds = [...new Set(sectionIds.map((id) => id.toString()))];
+
+    const uniqueClassIds = [
+      ...assignments.map((a) => a.classId?._id?.toString() || a.classId?.toString()),
+      ...classTeacherSections.map((s) => s.classId?._id?.toString() || s.classId?.toString()),
+    ].filter(Boolean);
+    const uniqueClassCount = new Set(uniqueClassIds).size;
+
+    // Total assigned students
+    const assignedStudentsCount = await Student.countDocuments({
+      schoolId,
+      sectionId: { $in: uniqueSectionIds },
+      status: "active",
+    });
+
+    // Today's Timetable slots
+    const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const todayDay = days[new Date().getDay()];
+    const todaySlots = await TimetableSlot.find({
+      schoolId,
+      teacherId: teacher._id,
+      dayOfWeek: todayDay,
+    })
+      .populate("classId", "name")
+      .populate("sectionId", "name")
+      .populate("subjectId", "name code")
+      .sort({ periodNumber: 1 });
+
+    // Today's teacher attendance / check-in status
+    const todayStr = new Date().toISOString().split("T")[0];
+    const todayAttendance = await TeacherAttendance.findOne({
+      schoolId,
+      teacherId: teacher._id,
+      date: todayStr,
+    });
+
+    // Attendance history summary
+    const attHistory = await TeacherAttendance.find({
+      schoolId,
+      teacherId: teacher._id,
+    });
+    const totalDaysLogged = attHistory.length;
+    const presentDays = attHistory.filter((h) => h.status === "Present").length;
+
+    // Active Homework & Pending Evaluations
+    const homeworkList = await Homework.find({
+      schoolId,
+      teacherId: teacher._id,
+      status: "Active",
+    })
+      .populate("classId", "name")
+      .populate("sectionId", "name")
+      .populate("subjectId", "name code")
+      .sort({ dueDate: -1 });
+
+    let pendingHomeworkEvaluations = 0;
+    homeworkList.forEach((hw) => {
+      const unevaluated = (hw.submissions || []).filter((s) => s.status === "Submitted").length;
+      pendingHomeworkEvaluations += unevaluated;
+    });
+
+    // Upcoming Exams (scheduled or ongoing)
+    const upcomingExams = await Exam.find({
+      schoolId,
+      status: { $in: ["Scheduled", "Ongoing", "Completed"] },
+    })
+      .sort({ startDate: 1 })
+      .limit(5);
+
+    // Recent Notices
+    const notices = await Notice.find({
+      schoolId,
+      status: "published",
+      targetAudience: { $in: ["all", "teachers"] },
+    })
+      .sort({ publishedAt: -1, createdAt: -1 })
+      .limit(5);
+
+    // Recent Notifications for this teacher
+    const notifications = await Notification.find({
+      schoolId,
+      recipientId: userId,
+    })
+      .sort({ createdAt: -1 })
+      .limit(6);
+
+    const unreadNotificationsCount = await Notification.countDocuments({
+      schoolId,
+      recipientId: userId,
+      isRead: false,
+    });
+
+    // Assigned complaints count
+    const complaintsCount = await Complaint.countDocuments({
+      schoolId,
+      assignedTo: teacher._id,
+      status: { $in: ["Pending", "InReview"] },
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        teacher,
+        school,
+        stats: {
+          assignedClassesCount: uniqueClassCount,
+          assignedSectionsCount: uniqueSectionIds.length,
+          assignedStudentsCount,
+          todayClassesCount: todaySlots.length,
+          todayAttendanceStatus: todayAttendance ? todayAttendance.status : "Pending",
+          todayCheckInTime: todayAttendance?.checkInTime || null,
+          staffAttendancePercentage: totalDaysLogged > 0 ? Math.round((presentDays / totalDaysLogged) * 100) : 100,
+          pendingHomeworkEvaluations,
+          activeHomeworkCount: homeworkList.length,
+          upcomingExamsCount: upcomingExams.length,
+          complaintsCount,
+          unreadNotificationsCount,
+        },
+        todaySlots,
+        todayAttendance,
+        homeworkList,
+        upcomingExams,
+        notices,
+        notifications,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch teacher dashboard statistics",
       error: error.message,
     });
   }

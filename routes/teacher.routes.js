@@ -6,6 +6,7 @@ import {
   updateTeacher,
   deleteTeacher,
   getMyAssignedClasses,
+  getTeacherDashboardStats,
   importTeachersCSV,
 } from "../controllers/teacher.controller.js";
 import { submitTeacherRegistrationRequest } from "../controllers/approvalCenter.controller.js";
@@ -21,8 +22,9 @@ router.post("/register-request", verifyCaptcha, submitTeacherRegistrationRequest
 
 router.use(authenticate, requireTenant);
 
-// Assigned classes shortcut for logged-in teacher
+// Assigned classes and dashboard metrics shortcut for logged-in teacher
 router.get("/my-classes", authorize("teacher", "principal"), getMyAssignedClasses);
+router.get("/dashboard-stats", authorize("teacher", "principal"), getTeacherDashboardStats);
 
 // Search & list teachers (Principal, Teacher, SuperAdmin)
 router.get("/", authorize("principal", "teacher", "superadmin"), getTeachers);

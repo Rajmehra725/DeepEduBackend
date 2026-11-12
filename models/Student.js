@@ -181,6 +181,20 @@ const studentSchema = new mongoose.Schema(
         remarks: { type: String, default: "" },
       },
     ],
+    teacherRemarks: [
+      {
+        teacherId: { type: mongoose.Schema.Types.ObjectId, ref: "Teacher" },
+        teacherName: { type: String, default: "" },
+        subjectName: { type: String, default: "" },
+        remark: { type: String, required: true },
+        category: {
+          type: String,
+          enum: ["Academic", "Behavior", "Attendance", "Achievement", "General"],
+          default: "Academic",
+        },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
     status: {
       type: String,
       enum: ["active", "inactive", "transferred", "archived"],
