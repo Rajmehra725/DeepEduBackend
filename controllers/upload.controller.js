@@ -10,7 +10,7 @@ import cloudinary from "../config/cloudinary.js";
 export const uploadFile = async (req, res) => {
   try {
     const schoolId = req.schoolId || "global";
-    const { base64, data, filename, folder = "deepedu_uploads", resourceType = "auto" } = req.body;
+    const { base64, data, filename, folder = "deepedu_uploads", resourceType = "auto" } = req.body || {};
 
     // 1. Check if multipart file buffer from multer
     if (req.file && req.file.buffer) {
@@ -32,11 +32,14 @@ export const uploadFile = async (req, res) => {
         });
       }
 
+      const isImage = req.file.mimetype.startsWith("image/");
+      const determinedResourceType = resourceType !== "auto" ? resourceType : (isImage ? "image" : "auto");
+
       const uploadStreamResult = await new Promise((resolve, reject) => {
         const stream = cloudinary.uploader.upload_stream(
           {
             folder: `deepedu/${schoolId}/${folder}`,
-            resource_type: resourceType,
+            resource_type: determinedResourceType,
             public_id: filename
               ? `${Date.now()}_${filename.replace(/[^a-zA-Z0-9_-]/g, "_")}`
               : `${Date.now()}_upload`,
@@ -65,14 +68,22 @@ export const uploadFile = async (req, res) => {
 
     // 2. Base64 or Data URI upload
     const payloadData = base64 || data;
-    if (payloadData) {
-      const uploadTarget = payloadData.startsWith("data:")
-        ? payloadData
-        : `data:image/jpeg;base64,${payloadData}`;
+    if (payloadData && typeof payloadData === "string") {
+      let uploadTarget = payloadData.trim();
+      let isImage = false;
+
+      if (uploadTarget.startsWith("data:")) {
+        isImage = uploadTarget.startsWith("data:image/");
+      } else {
+        uploadTarget = `data:image/jpeg;base64,${uploadTarget}`;
+        isImage = true;
+      }
+
+      const determinedResourceType = resourceType !== "auto" ? resourceType : (isImage ? "image" : "auto");
 
       const uploadResult = await cloudinary.uploader.upload(uploadTarget, {
         folder: `deepedu/${schoolId}/${folder}`,
-        resource_type: resourceType,
+        resource_type: determinedResourceType,
         public_id: filename
           ? `${Date.now()}_${filename.replace(/[^a-zA-Z0-9_-]/g, "_")}`
           : `${Date.now()}_upload`,
@@ -97,10 +108,10 @@ export const uploadFile = async (req, res) => {
       message: "No file buffer or base64 data provided for upload",
     });
   } catch (error) {
-    console.error("Upload error:", error);
+    console.error("Upload error details:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to upload file to cloud storage",
+      message: error.message || "Failed to upload file to cloud storage",
       error: error.message,
     });
   }
