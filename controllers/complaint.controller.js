@@ -3,6 +3,7 @@ import Student from "../models/Student.js";
 import Teacher from "../models/Teacher.js";
 import Notification from "../models/Notification.js";
 import User from "../models/User.js";
+import { sendPushToUsers } from "../utils/pushNotifier.js";
 
 export const createComplaint = async (req, res) => {
   try {
@@ -64,6 +65,15 @@ export const createComplaint = async (req, res) => {
         type: "Complaint",
       });
     }
+
+    sendPushToUsers(
+      principals.map((p) => p._id),
+      {
+        title: "New Shikayat / Complaint Received",
+        body: `A complaint "${title}" was filed by ${student.firstName}.`,
+        data: { screen: "complaints", type: "Complaint" },
+      }
+    ).catch(() => {});
 
     return res.status(201).json({
       success: true,
@@ -221,6 +231,12 @@ export const updateComplaintStatus = async (req, res) => {
       message: `Your complaint status is now '${complaint.status}'. ${resolutionReason ? "Resolution: " + resolutionReason : ""}`,
       type: "Complaint",
     });
+
+    sendPushToUsers(complaint.studentUserId, {
+      title: `Complaint Status Update: ${complaint.title}`,
+      body: `Status updated to ${complaint.status}.`,
+      data: { screen: "complaints", type: "Complaint" },
+    }).catch(() => {});
 
     return res.status(200).json({
       success: true,

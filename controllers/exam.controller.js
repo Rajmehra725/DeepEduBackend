@@ -4,6 +4,7 @@ import Student from "../models/Student.js";
 import Teacher from "../models/Teacher.js";
 import Notification from "../models/Notification.js";
 import ClassSubjectTeacher from "../models/ClassSubjectTeacher.js";
+import { sendPushToUsers } from "../utils/pushNotifier.js";
 
 const calculateGrade = (obtained, max) => {
   if (max <= 0) return "F";
@@ -267,6 +268,15 @@ export const publishExam = async (req, res) => {
         type: "Exam",
       });
     }
+
+    sendPushToUsers(
+      students.map((s) => s.userId).filter(Boolean),
+      {
+        title: `Results Published: ${exam.name}`,
+        body: `Results for ${exam.name} are available.`,
+        data: { screen: "results", type: "Exam" },
+      }
+    ).catch(() => {});
 
     return res.status(200).json({
       success: true,

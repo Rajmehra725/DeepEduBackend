@@ -4,6 +4,7 @@ import Student from "../models/Student.js";
 import AuditLog from "../models/AuditLog.js";
 import Notification from "../models/Notification.js";
 import User from "../models/User.js";
+import { sendPushToUsers } from "../utils/pushNotifier.js";
 
 /**
  * Apply for formal leave (Teacher or Student)
@@ -79,6 +80,15 @@ export const applyLeave = async (req, res) => {
         type: "Leave",
       });
     }
+
+    sendPushToUsers(
+      principals.map((p) => p._id),
+      {
+        title: `Leave Application: ${applicantName}`,
+        body: `${applicantName} applied for ${leaveType} (${startDate} to ${endDate}).`,
+        data: { screen: "approval-center", type: "Leave" },
+      }
+    ).catch(() => {});
 
     await AuditLog.create({
       schoolId,
@@ -256,6 +266,12 @@ export const reviewLeave = async (req, res) => {
       message: `Your ${leave.leaveType} application for ${leave.startDate} to ${leave.endDate} has been ${status.toLowerCase()} by administration.${remarks ? ` Remarks: ${remarks}` : ""}`,
       type: "Leave",
     });
+
+    sendPushToUsers(leave.applicantId, {
+      title: `Leave Application ${status}`,
+      body: `Your ${leave.leaveType} has been ${status.toLowerCase()}.`,
+      data: { screen: "staff-attendance", type: "Leave" },
+    }).catch(() => {});
 
     await AuditLog.create({
       schoolId,

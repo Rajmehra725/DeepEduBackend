@@ -47,6 +47,19 @@ const teacherSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
+    profileImage: {
+      type: String,
+      default: "",
+    },
+    gender: {
+      type: String,
+      enum: ["Male", "Female", "Other", ""],
+      default: "",
+    },
+    dob: {
+      type: Date,
+      default: null,
+    },
     designation: {
       type: String,
       trim: true,
@@ -62,6 +75,22 @@ const teacherSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
+    experience: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    address: {
+      street: { type: String, default: "" },
+      city: { type: String, default: "" },
+      state: { type: String, default: "" },
+      pincode: { type: String, default: "" },
+    },
+    emergencyContact: {
+      name: { type: String, default: "" },
+      relation: { type: String, default: "" },
+      phone: { type: String, default: "" },
+    },
     joiningDate: {
       type: Date,
       default: Date.now,
@@ -72,6 +101,14 @@ const teacherSchema = new mongoose.Schema(
       default: "active",
       index: true,
     },
+    documents: [
+      {
+        title: { type: String, required: true },
+        url: { type: String, required: true },
+        type: { type: String, default: "Certificate" },
+        uploadedAt: { type: Date, default: Date.now },
+      },
+    ],
   },
   {
     timestamps: true,

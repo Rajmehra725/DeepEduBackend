@@ -4,6 +4,7 @@ import Teacher from "../models/Teacher.js";
 import ClassSubjectTeacher from "../models/ClassSubjectTeacher.js";
 import Section from "../models/Section.js";
 import Notification from "../models/Notification.js";
+import { sendPushToUsers } from "../utils/pushNotifier.js";
 
 export const getRoster = async (req, res) => {
   try {
@@ -188,6 +189,12 @@ export const markAttendance = async (req, res) => {
             type: "Attendance",
           });
         }
+
+        sendPushToUsers(recipients.filter(Boolean), {
+          title: "Attendance Notice: Absent Today",
+          body: `${st.firstName} was marked Absent on ${date}.`,
+          data: { screen: "attendance", type: "Attendance" },
+        }).catch(() => {});
       }
     }
 

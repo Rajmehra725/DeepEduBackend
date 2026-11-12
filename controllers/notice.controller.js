@@ -1,4 +1,7 @@
 import Notice from "../models/Notice.js";
+import Notification from "../models/Notification.js";
+import User from "../models/User.js";
+import { sendPushToUsers } from "../utils/pushNotifier.js";
 
 export const getNotices = async (req, res) => {
   try {
@@ -63,6 +66,37 @@ export const createNotice = async (req, res) => {
       postedBy: userId,
       publishedDate: new Date(),
     });
+
+    // Notify recipients based on targetAudience
+    try {
+      const userQuery = { schoolId };
+      if (targetAudience === "Teachers") userQuery.role = "teacher";
+      else if (targetAudience === "Students") userQuery.role = "student";
+      else if (targetAudience === "Parents") userQuery.role = "parent";
+
+      const recipients = await User.find(userQuery).select("_id");
+      const recipientIds = recipients.map((r) => r._id).filter((id) => id.toString() !== userId.toString());
+
+      if (recipientIds.length > 0) {
+        const notifDocs = recipientIds.map((rId) => ({
+          schoolId,
+          recipientId: rId,
+          title: `Notice: ${title.trim()}`,
+          message: content.trim().slice(0, 150),
+          type: "Notice",
+          linkUrl: "notices",
+        }));
+        await Notification.insertMany(notifDocs);
+
+        sendPushToUsers(recipientIds, {
+          title: `Notice: ${title.trim()}`,
+          body: content.trim().slice(0, 100),
+          data: { screen: "notices", type: "Notice" },
+        }).catch(() => {});
+      }
+    } catch (notifErr) {
+      console.warn("Notice push dispatch error:", notifErr.message);
+    }
 
     return res.status(201).json({
       success: true,

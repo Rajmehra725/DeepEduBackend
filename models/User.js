@@ -53,6 +53,13 @@ const userSchema = new mongoose.Schema(
         ref: "Student",
       },
     ],
+    deviceTokens: [
+      {
+        token: { type: String, required: true },
+        platform: { type: String, default: "android" },
+        updatedAt: { type: Date, default: Date.now },
+      },
+    ],
     resetPasswordToken: {
       type: String,
       default: null,

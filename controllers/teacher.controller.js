@@ -645,3 +645,305 @@ export const getTeacherDashboardStats = async (req, res) => {
     });
   }
 };
+
+/**
+ * Get Full 11-Section Comprehensive Profile for Logged-In Teacher
+ */
+export const getMyTeacherProfile = async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    const userId = req.user._id;
+
+    let teacher = await Teacher.findOne({ userId, schoolId });
+    if (!teacher) {
+      if (req.user.role === "teacher") {
+        const empId = `EMP-${Date.now().toString().slice(-4)}`;
+        const permanentId = await generatePermanentId(schoolId, "teacher", "TCH");
+        teacher = await Teacher.create({
+          schoolId,
+          userId,
+          employeeId: empId,
+          permanentId,
+          firstName: req.user.name?.split(" ")[0] || "Faculty",
+          lastName: req.user.name?.split(" ").slice(1).join(" ") || "",
+          email: req.user.email,
+          phone: req.user.phone || "",
+          profileImage: req.user.profileImage || "",
+          designation: "Educator",
+          qualification: "Post Graduate / B.Ed",
+          status: "active",
+        });
+      } else {
+        return res.status(404).json({
+          success: false,
+          message: "No teacher profile found for this account",
+        });
+      }
+    }
+
+    const school = await School.findById(schoolId).select(
+      "name code logo address phone email branch affiliationNumber udiseCode"
+    );
+
+    // Academic responsibilities: assigned classes, sections, subjects
+    const assignments = await ClassSubjectTeacher.find({ schoolId, teacherId: teacher._id })
+      .populate("classId", "name numericGrade")
+      .populate("sectionId", "name capacity")
+      .populate("subjectId", "name code type");
+
+    // Class teacher responsibility
+    const classTeacherSections = await Section.find({ schoolId, classTeacherId: teacher._id })
+      .populate("classId", "name numericGrade");
+
+    // Weekly timetable
+    const timetable = await TimetableSlot.find({ schoolId, teacherId: teacher._id })
+      .populate("classId", "name")
+      .populate("sectionId", "name")
+      .populate("subjectId", "name code")
+      .sort({ dayOfWeek: 1, periodNumber: 1 });
+
+    // Attendance history and monthly summary
+    const attRecords = await TeacherAttendance.find({ schoolId, teacherId: teacher._id })
+      .sort({ date: -1 })
+      .limit(60);
+
+    const totalDays = attRecords.length;
+    const presentDays = attRecords.filter((r) => r.status === "Present").length;
+    const leaveDays = attRecords.filter((r) => r.status === "Leave" || r.status === "HalfDay").length;
+    const attendancePercentage = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 100;
+
+    // Academic activity: homework & exams
+    const homework = await Homework.find({ schoolId, teacherId: teacher._id }).sort({ createdAt: -1 });
+    let pendingHomeworkEvaluations = 0;
+    homework.forEach((hw) => {
+      const pending = (hw.submissions || []).filter((s) => s.status === "Submitted").length;
+      pendingHomeworkEvaluations += pending;
+    });
+
+    const exams = await Exam.find({ schoolId, status: { $in: ["Scheduled", "Ongoing", "Completed"] } })
+      .sort({ startDate: -1 })
+      .limit(5);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        teacher: {
+          ...teacher.toObject(),
+          profileImage: teacher.profileImage || req.user.profileImage || "",
+        },
+        user: {
+          id: req.user._id,
+          name: req.user.name,
+          email: req.user.email,
+          phone: req.user.phone,
+          profileImage: req.user.profileImage,
+          role: req.user.role,
+          status: req.user.status,
+        },
+        school,
+        academicResponsibilities: {
+          assignments,
+          classTeacherSections,
+        },
+        timetable,
+        attendance: {
+          summary: {
+            totalDays,
+            presentDays,
+            leaveDays,
+            attendancePercentage,
+          },
+          recentRecords: attRecords.slice(0, 15),
+        },
+        academicActivity: {
+          totalHomeworkCreated: homework.length,
+          pendingHomeworkEvaluations,
+          upcomingExamsCount: exams.length,
+          exams,
+        },
+        documents: teacher.documents || [],
+      },
+    });
+  } catch (error) {
+    console.error("Get teacher profile error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch comprehensive teacher profile",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Update Permitted Teacher Profile Information
+ */
+export const updateMyTeacherProfile = async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    const userId = req.user._id;
+
+    const teacher = await Teacher.findOne({ userId, schoolId });
+    if (!teacher) {
+      return res.status(404).json({
+        success: false,
+        message: "Teacher profile not found",
+      });
+    }
+
+    const {
+      phone,
+      gender,
+      dob,
+      address,
+      emergencyContact,
+      qualification,
+      specialization,
+      experience,
+    } = req.body;
+
+    if (phone !== undefined) {
+      teacher.phone = phone.trim();
+      await User.findByIdAndUpdate(userId, { phone: phone.trim() });
+    }
+    if (gender !== undefined) teacher.gender = gender;
+    if (dob !== undefined) teacher.dob = dob ? new Date(dob) : null;
+    if (experience !== undefined) teacher.experience = experience.trim();
+    if (qualification !== undefined) teacher.qualification = qualification.trim();
+    if (specialization !== undefined) teacher.specialization = specialization.trim();
+    if (address !== undefined) teacher.address = address;
+    if (emergencyContact !== undefined) teacher.emergencyContact = emergencyContact;
+
+    await teacher.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Teacher profile updated successfully",
+      data: teacher,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update profile",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Update Teacher Profile Photo
+ */
+export const uploadMyTeacherPhoto = async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    const userId = req.user._id;
+    const { profileImage } = req.body;
+
+    if (!profileImage) {
+      return res.status(400).json({
+        success: false,
+        message: "Profile image URL is required",
+      });
+    }
+
+    const teacher = await Teacher.findOneAndUpdate(
+      { userId, schoolId },
+      { profileImage },
+      { new: true }
+    );
+
+    await User.findByIdAndUpdate(userId, { profileImage });
+
+    return res.status(200).json({
+      success: true,
+      message: "Profile photo updated successfully",
+      data: { profileImage },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update profile photo",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Upload Authorized Teacher Document
+ */
+export const uploadMyTeacherDocument = async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    const userId = req.user._id;
+    const { title, url, type = "Certificate" } = req.body;
+
+    if (!title || !url) {
+      return res.status(400).json({
+        success: false,
+        message: "Document title and URL are required",
+      });
+    }
+
+    const teacher = await Teacher.findOne({ userId, schoolId });
+    if (!teacher) {
+      return res.status(404).json({
+        success: false,
+        message: "Teacher profile not found",
+      });
+    }
+
+    teacher.documents.push({
+      title: title.trim(),
+      url,
+      type,
+      uploadedAt: new Date(),
+    });
+
+    await teacher.save();
+
+    return res.status(201).json({
+      success: true,
+      message: "Document uploaded successfully",
+      data: teacher.documents,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to upload document",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Delete Authorized Teacher Document
+ */
+export const deleteMyTeacherDocument = async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    const userId = req.user._id;
+    const { docId } = req.params;
+
+    const teacher = await Teacher.findOne({ userId, schoolId });
+    if (!teacher) {
+      return res.status(404).json({
+        success: false,
+        message: "Teacher profile not found",
+      });
+    }
+
+    teacher.documents = teacher.documents.filter((doc) => doc._id.toString() !== docId);
+    await teacher.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Document removed successfully",
+      data: teacher.documents,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to remove document",
+      error: error.message,
+    });
+  }
+};

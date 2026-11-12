@@ -3,6 +3,7 @@ import Student from "../models/Student.js";
 import Teacher from "../models/Teacher.js";
 import Notification from "../models/Notification.js";
 import ClassSubjectTeacher from "../models/ClassSubjectTeacher.js";
+import { sendPushToUsers } from "../utils/pushNotifier.js";
 
 export const getHomework = async (req, res) => {
   try {
@@ -138,6 +139,15 @@ export const createHomework = async (req, res) => {
         type: "Homework",
       });
     }
+
+    sendPushToUsers(
+      students.map((s) => s.userId).filter(Boolean),
+      {
+        title: `New Homework: ${title}`,
+        body: `Due date: ${new Date(dueDate).toLocaleDateString()}.`,
+        data: { screen: "homework" },
+      }
+    ).catch(() => {});
 
     return res.status(201).json({
       success: true,
@@ -361,6 +371,12 @@ export const evaluateHomeworkSubmission = async (req, res) => {
         message: `Your homework has been evaluated. Grade: ${grade || marks || "Evaluated"}.${feedback ? ` Feedback: ${feedback.trim()}` : ""}`,
         type: "Homework",
       });
+
+      sendPushToUsers(student.userId, {
+        title: `Homework Evaluated: ${homework.title}`,
+        body: `Grade: ${grade || marks || "Evaluated"}.`,
+        data: { screen: "homework" },
+      }).catch(() => {});
     }
 
     return res.status(200).json({
